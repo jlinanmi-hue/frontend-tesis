@@ -62,7 +62,6 @@ export default function GestionProductos() {
     Producto_producto_ubi_id: '',
     ProductoStockMinimo: 5,
     ProductoStockMaximo: 1000,
-    ProductoStockVirtual: 50,
     stockInicial: 0,
     ProductoEstado: 'A',
     detalles: [
@@ -256,9 +255,6 @@ export default function GestionProductos() {
         Producto_producto_ubi_id: formData.Producto_producto_ubi_id || null,
         ProductoStockMinimo: Number(formData.ProductoStockMinimo) || 5,
         ProductoStockMaximo: Number(formData.ProductoStockMaximo) || 1000,
-        ProductoStockVirtual: formData.ProductoStockVirtual !== '' && formData.ProductoStockVirtual !== null && !isNaN(Number(formData.ProductoStockVirtual))
-          ? Number(formData.ProductoStockVirtual)
-          : 0,
         detalles: formData.detalles.map((d, index) => ({
           unidades_medidaId: d.unidades_medidaId,
           factor_conversion: index === 0 ? 1 : (parseInt(d.factor_conversion, 10) || 1),
@@ -395,7 +391,6 @@ export default function GestionProductos() {
       Producto_producto_ubi_id: prod.Producto_producto_ubi_id || '',
       ProductoStockMinimo: prod.ProductoStockMinimo || 5,
       ProductoStockMaximo: prod.ProductoStockMaximo || 1000,
-      ProductoStockVirtual: prod.ProductoStockVirtual !== undefined ? prod.ProductoStockVirtual : (prod.stock_virtual_limite ?? 50),
       stockInicial: 0,
       ProductoEstado: prod.ProductoEstado || 'A',
       detalles: detallesMapeados.length > 0 ? detallesMapeados : initialFormState.detalles,
@@ -423,7 +418,6 @@ export default function GestionProductos() {
             Producto_producto_ubi_id: fresh.Producto_producto_ubi_id || prev.Producto_producto_ubi_id,
             ProductoStockMinimo: fresh.ProductoStockMinimo || prev.ProductoStockMinimo,
             ProductoStockMaximo: fresh.ProductoStockMaximo || prev.ProductoStockMaximo,
-            ProductoStockVirtual: fresh.ProductoStockVirtual !== undefined ? fresh.ProductoStockVirtual : prev.ProductoStockVirtual,
           }));
 
           if (fresh.producto_imagen && fresh.producto_imagen !== 'Sin imagenes, ') {
@@ -753,8 +747,8 @@ export default function GestionProductos() {
               )}
             </div>
 
-            {/* Stock Mínimo, Stock Máximo, Stock Virtual y Stock Inicial */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Stock Mínimo, Stock Máximo y Stock Inicial */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Stock Mínimo</label>
                 <input
@@ -775,25 +769,6 @@ export default function GestionProductos() {
                   onChange={(e) => setFormData({ ...formData, ProductoStockMaximo: e.target.value })}
                   className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Stock Virtual</span>
-                  <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">Búfer</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="0 = Sin virtual"
-                  value={formData.ProductoStockVirtual}
-                  onChange={(e) => setFormData({ ...formData, ProductoStockVirtual: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-indigo-200 rounded-xl focus:outline-hidden focus:border-indigo-500 focus:bg-white text-indigo-950 font-medium"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Máx. sobregiro (0 para prohibir)
-                </p>
               </div>
 
               <div>
@@ -1092,36 +1067,17 @@ export default function GestionProductos() {
                               )}
                             </td>
                             <td className="py-3 px-3.5 text-center">
-                              <div className="flex flex-col items-center gap-1">
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                                    isZero
-                                      ? 'bg-rose-100 text-rose-700'
-                                      : isLow
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : 'bg-emerald-100 text-emerald-800'
-                                  }`}
-                                >
-                                  {p.stock_actual_formateado || `${stock} Unidades`}
-                                </span>
-                                {(() => {
-                                  const limVirt = parseFloat(p.ProductoStockVirtual ?? p.stock_virtual_limite ?? 0);
-                                  const consVirt = parseFloat(p.ProductoStockVirtualConsumido ?? p.stock_virtual_consumido ?? 0);
-                                  const dispVirt = Math.max(0, limVirt - consVirt);
-                                  return (
-                                    <span
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
-                                        limVirt > 0
-                                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                          : 'bg-slate-50 text-slate-400 border-slate-200'
-                                      }`}
-                                      title={limVirt > 0 ? `Búfer virtual: ${limVirt} (Consumido: ${consVirt}, Disponible: ${dispVirt})` : 'Sin venta virtual permitida'}
-                                    >
-                                      {limVirt > 0 ? `+${dispVirt} Virtual` : '0 Virtual'}
-                                    </span>
-                                  );
-                                })()}
-                              </div>
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                  isZero
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : isLow
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-100 text-emerald-800'
+                                }`}
+                              >
+                                {p.stock_actual_formateado || `${stock} Unidades`}
+                              </span>
                             </td>
                             <td className="py-3 px-3.5 text-right font-semibold text-slate-800">
                               {p.precio_venta_base_formateado || '—'}

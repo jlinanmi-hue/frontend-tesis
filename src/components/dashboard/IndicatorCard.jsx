@@ -25,7 +25,7 @@ export default function IndicatorCard({ id, data, onClick }) {
     3: {
       key: 'prs',
       titulo: 'Porcentaje de Roturas de Stock Semanales',
-      subtitulo: 'Quiebres Fatales vs. Buffer Virtual',
+      subtitulo: 'Frecuencia de Quiebres e Incidencias Físicas',
       icon: <Box className="w-4 h-4 text-purple-600" />,
       iconBg: 'bg-purple-50/80 border-purple-100/90',
       metaText: `Meta: ≤ ${data?.meta ?? 3}%`,

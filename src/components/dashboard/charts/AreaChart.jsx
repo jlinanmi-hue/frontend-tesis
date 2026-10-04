@@ -3,23 +3,23 @@ import SafeApexChart from './SafeApexChart';
 
 export default function AreaChart({ data = [], isMoney = false }) {
   const categories = data.map(d => d.etapa || (d.fecha ? d.fecha.substring(5) : ''));
-  const hasSalvadas = data.length > 0 && data.some(d => d.monto_salvado !== undefined);
+  const hasCommercial = data.length > 0 && data.some(d => d.monto_perdido !== undefined || d.monto_salvado !== undefined);
 
   let series = [];
   let colors = [];
 
-  if (hasSalvadas) {
+  if (hasCommercial) {
     series = [
       {
-        name: 'Órdenes Salvadas (Stock Virtual)',
-        data: data.map(d => Number(d.monto_salvado) || 0),
-      },
-      {
-        name: 'Pérdida por Quiebre (Rotura Fatal)',
+        name: 'Pérdida Comercial (S/)',
         data: data.map(d => Number(d.monto_perdido) || 0),
       },
+      {
+        name: 'Pedidos en Quiebre (Cant.)',
+        data: data.map(d => Number(d.pedidos_afectados ?? (d.monto_perdido > 0 ? 1 : 0)) || 0),
+      },
     ];
-    colors = ['#10b981', '#ef4444'];
+    colors = ['#ef4444', '#6366f1'];
   } else {
     const values = data.map(d => Number(d.total || d.monto_perdido) || 0);
     series = [{ name: isMoney ? 'Pérdida Comercial' : 'Errores', data: values }];
@@ -54,11 +54,16 @@ export default function AreaChart({ data = [], isMoney = false }) {
     },
     tooltip: {
       y: {
-        formatter: (val) => isMoney ? `S/ ${Number(val).toFixed(2)}` : `${val} eventos`,
+        formatter: (val, opts) => {
+          if (hasCommercial && opts && opts.seriesIndex !== undefined) {
+            return opts.seriesIndex === 0 ? `S/ ${Number(val).toFixed(2)}` : `${val} pedidos`;
+          }
+          return isMoney ? `S/ ${Number(val).toFixed(2)}` : `${val} eventos`;
+        },
       },
     },
     legend: {
-      show: hasSalvadas,
+      show: hasCommercial,
       position: 'top',
       horizontalAlign: 'right',
       fontSize: '11px',

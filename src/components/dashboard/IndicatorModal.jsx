@@ -177,7 +177,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                     </h3>
                     <p className="text-[11px] text-slate-400 mb-3">Motivos registrados en la anulación de órdenes.</p>
                     <HorizontalBarChart data={data.failure_reasons} labelKey="motivo" valueKey="total" color="#ef4444" unit="ped." />
-                    <InterpretationBox text="Identifica los motivos de anulación en órdenes fallidas, siendo la falta de stock físico el factor predominante subsanado mediante el stock virtual asistido por IA." />
+                    <InterpretationBox text="Identifica los motivos de anulación en órdenes fallidas, permitiendo focalizar la gestión de compras y abastecimiento oportuno en los artículos más demandados." />
                   </div>
 
                   {/* Subgráfico E: Estado Final del Despacho */}
@@ -444,11 +444,11 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                 <>
                   <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs">
                     <h3 className="font-bold text-xs text-slate-700 mb-1 flex items-center justify-between">
-                      <span>Subgráfico A: Top 10 Productos con Quiebre & Buffer Virtual</span>
+                      <span>Subgráfico A: Top 10 Productos con Mayor Quiebre de Stock Físico</span>
                       <span className="text-[10px] text-slate-400 font-normal">Horizontal Bar</span>
                     </h3>
                     <p className="text-[11px] text-slate-400 mb-3">
-                      Quiebres fatales (pedidos perdidos) vs. unidades amortiguadas mediante Stock Virtual.
+                      Incidentes de rotura y pedidos no atendidos por agotamiento de existencias.
                     </p>
                     <HorizontalBarChart
                       data={data.top_products}
@@ -456,45 +456,41 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                       unit="unid."
                       customSeries={[
                         {
-                          name: 'Quiebres Fatales',
+                          name: 'Quiebres Registrados',
                           data: (data.top_products || []).map((d) => Number(d.total_quiebres) || 0),
                         },
-                        {
-                          name: 'Consumo Stock Virtual',
-                          data: (data.top_products || []).map((d) => Number(d.consumo_virtual) || 0),
-                        },
                       ]}
-                      customColors={['#f97316', '#0284c7']}
+                      customColors={['#f97316']}
                     />
-                    <InterpretationBox text="Compara los quiebres físicos fatales frente a las unidades amortiguadas por el stock virtual, evidenciando cómo se evitan pérdidas definitivas de órdenes de compra." />
+                    <InterpretationBox text="Identifica los artículos con mayor recurrencia de rotura de stock físico en el almacén, prioritarios para órdenes de reposición con proveedores." />
                   </div>
 
                   <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs">
                     <h3 className="font-bold text-xs text-slate-700 mb-1 flex items-center justify-between">
-                      <span>Subgráfico B: Roturas y Presión Virtual por Categoría</span>
+                      <span>Subgráfico B: Concentración de Roturas de Stock por Categoría</span>
                       <span className="text-[10px] text-slate-400 font-normal">Pie Chart</span>
                     </h3>
-                    <p className="text-[11px] text-slate-400 mb-3">Concentración de incidencias y consumo de colchón virtual por categoría.</p>
+                    <p className="text-[11px] text-slate-400 mb-3">Distribución porcentual de quiebres físicos según la familia de productos.</p>
                     <PieChart data={data.by_category} />
                     <InterpretationBox text="Identifica las familias de productos más vulnerables al agotamiento de stock físico, permitiendo planificar con prioridad compras a proveedores." />
                   </div>
 
                   <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs">
                     <h3 className="font-bold text-xs text-slate-700 mb-1 flex items-center justify-between">
-                      <span>Subgráfico C: Impacto Comercial (Órdenes Salvadas vs Pérdidas por Quiebre)</span>
+                      <span>Subgráfico C: Impacto Comercial por Quiebre de Stock</span>
                       <span className="text-[10px] text-slate-400 font-normal">Area Chart</span>
                     </h3>
-                    <p className="text-[11px] text-slate-400 mb-3">Órdenes protegidas en S/ gracias al Stock Virtual frente a pérdidas reales por quiebre fatal.</p>
+                    <p className="text-[11px] text-slate-400 mb-3">Pérdida económica en Soles (PEN) por pedidos cancelados debido a falta de existencias físicas.</p>
                     <AreaChart data={data.commercial_impact} isMoney={true} />
-                    <InterpretationBox text="Demuestra el beneficio económico en Soles (PEN) obtenido al retener ventas mediante el colchón virtual, minimizando la fuga de facturación." />
+                    <InterpretationBox text="Cuantifica el costo de oportunidad y la fuga de facturación originada por roturas de stock físico no abastecidas oportunamente." />
                   </div>
 
                   <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs">
                     <h3 className="font-bold text-xs text-slate-700 mb-1 flex items-center justify-between">
-                      <span>Subgráfico D: Top 10 Alertas de Stock Crítico y Buffer Virtual</span>
+                      <span>Subgráfico D: Top 10 Alertas de Stock Crítico vs. Mínimo</span>
                       <span className="text-[10px] text-slate-400 font-normal">Dual Bar</span>
                     </h3>
-                    <p className="text-[11px] text-slate-400 mb-3">Productos con stock físico ≤ mínimo y buffer virtual remanente de contingencia.</p>
+                    <p className="text-[11px] text-slate-400 mb-3">Productos con stock físico actual por debajo o cerca del umbral de seguridad.</p>
                     <HorizontalBarChart
                       data={data.critical_alerts}
                       labelKey="ProductoNombre"
@@ -505,13 +501,13 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                           data: (data.critical_alerts || []).map((d) => Number(d.ProductoStockActual) || 0),
                         },
                         {
-                          name: 'Buffer Virtual Restante',
-                          data: (data.critical_alerts || []).map((d) => Number(d.stock_virtual_disponible) || 0),
+                          name: 'Stock Mínimo Requerido',
+                          data: (data.critical_alerts || []).map((d) => Number(d.ProductoStockMinimo) || 0),
                         },
                       ]}
-                      customColors={['#eab308', '#10b981']}
+                      customColors={['#eab308', '#ef4444']}
                     />
-                    <InterpretationBox text="Supervisa en tiempo real los artículos en zona de riesgo que requieren abastecimiento antes de que el buffer virtual se agote por completo." />
+                    <InterpretationBox text="Supervisa en tiempo real los artículos en zona de riesgo que requieren abastecimiento inmediato antes de alcanzar quiebre total." />
                   </div>
                 </>
               )}
@@ -597,7 +593,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                           <span className="text-lg font-mono font-extrabold text-emerald-600 block mt-1">
                             {data.subtask_breakdown?.validacion_stock_seg || 12.3}s
                           </span>
-                          <span className="text-[9px] text-slate-500">Físico / Virtual</span>
+                          <span className="text-[9px] text-slate-500">Disponibilidad Real</span>
                         </div>
                         <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-xl text-center">
                           <span className="text-[10px] text-slate-400 font-semibold block uppercase">4. Pago</span>
@@ -642,7 +638,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                         </div>
                       )}
 
-                      <InterpretationBox text="El desglose de sub-tareas demuestra que el cuello de botella tradicional de búsqueda de ítems se redujo drásticamente gracias al motor de búsqueda asistido por IA, mientras que la validación de stock físico vs virtual se ejecuta en milisegundos." />
+                      <InterpretationBox text="El desglose de sub-tareas demuestra que el cuello de botella tradicional de búsqueda de ítems se redujo drásticamente gracias al motor de búsqueda asistido por IA, mientras que la validación de existencias físicas en almacén se ejecuta en milisegundos." />
                     </div>
                   )}
                 </>

@@ -339,11 +339,9 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         unidad_abreviatura: p.unidad_abreviatura || p.presentacion || 'UND',
         unidad_descripcion: p.unidad_descripcion || p.presentacion || 'Unidades',
         factor_conversion: parseFloat(p.factor_conversion) || 1,
-        stock_fisico: parseFloat(p.stock_fisico) || 0,
-        stock_virtual_disponible: parseFloat(p.stock_virtual_disponible) || 0,
-        stock_total: parseFloat(p.stock_total) || 0,
-        cantidad_fisica_estimada: parseFloat(p.cantidad_fisica_estimada) || 0,
-        cantidad_virtual_estimada: parseFloat(p.cantidad_virtual_estimada) || 0,
+        stock_fisico: parseFloat(p.stock_fisico || p.stock_total || 0) || 0,
+        stock_total: parseFloat(p.stock_total || p.stock_fisico || 0) || 0,
+        cantidad_fisica_estimada: parseFloat(p.cantidad_fisica_estimada || p.cantidad || 0) || 0,
         precio_unitario: parseFloat(p.precio_unitario) || 0,
         cantidad: parseFloat(p.cantidad) || 1,
         subtotal: parseFloat(p.subtotal) || (parseFloat(p.cantidad || 1) * parseFloat(p.precio_unitario || 0)),
@@ -774,15 +772,11 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       return;
     }
 
-    const stockFisico = parseFloat(productoEnSeleccion.ProductoStockActual || 0);
-    const stockVirtualBuffer = parseFloat(productoEnSeleccion.ProductoStockVirtual ?? 50);
-    const stockVirtualConsumido = parseFloat(productoEnSeleccion.ProductoStockVirtualConsumido ?? 0);
-    const stockVirtualDisp = parseFloat(
-      productoEnSeleccion.stock_virtual_disponible !== undefined
-        ? productoEnSeleccion.stock_virtual_disponible
-        : Math.max(0, stockVirtualBuffer - stockVirtualConsumido)
-    );
-    const stockTotal = parseFloat((stockFisico + stockVirtualDisp).toFixed(2));
+    const rawStock = productoEnSeleccion.ProductoStockActual;
+    const stockFisico = (rawStock !== null && rawStock !== undefined && !isNaN(Number(rawStock)))
+      ? parseFloat(rawStock)
+      : 0;
+    const stockTotal = Math.max(0, stockFisico);
     const factorConversion = parseFloat(unidadSeleccionada?.factor_conversion || 1);
     const totalEnUnidadBase = parseFloat((cantidad * factorConversion).toFixed(2));
     const unidadTexto = productoEnSeleccion.unidad_base || 'UND';
@@ -791,7 +785,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       const faltante = parseFloat((totalEnUnidadBase - stockTotal).toFixed(2));
       sileo.error({
         title: 'Stock Insuficiente',
-        description: `No hay stock suficiente para cubrir ${totalEnUnidadBase} ${unidadTexto}. Stock disponible: ${stockFisico} físico + ${stockVirtualDisp} virtual (Total: ${stockTotal} ${unidadTexto}). Faltan ${faltante} ${unidadTexto} para cubrir el pedido.`,
+        description: `No hay stock suficiente para cubrir ${totalEnUnidadBase} ${unidadTexto}. Stock físico disponible: ${stockTotal} ${unidadTexto}. Faltan ${faltante} ${unidadTexto} para cubrir el pedido.`,
       });
       return;
     }
@@ -808,25 +802,18 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         const faltante = parseFloat((nuevoTotalBase - stockTotal).toFixed(2));
         sileo.error({
           title: 'Stock Insuficiente',
-          description: `Supera el stock vendible total (${stockTotal} ${unidadTexto}). Ya tenía ${cantidadPrevia} en el pedido y solicitó ${cantidad} más (Total: ${nuevoTotalBase} ${unidadTexto}). Faltan ${faltante} ${unidadTexto}.`,
+          description: `Supera el stock físico disponible (${stockTotal} ${unidadTexto}). Ya tenía ${cantidadPrevia} en el pedido y solicitó ${cantidad} más (Total: ${nuevoTotalBase} ${unidadTexto}). Faltan ${faltante} ${unidadTexto}.`,
         });
         return;
       }
 
-      const cantFisica = Math.min(nuevoTotalBase, stockFisico);
-      const cantVirtual = Math.max(0, parseFloat((nuevoTotalBase - cantFisica).toFixed(2)));
-
       const copia = [...productosPedido];
       copia[indexExistente].cantidad = nuevaCantidad;
       copia[indexExistente].subtotal = parseFloat((nuevaCantidad * precio).toFixed(2));
-      copia[indexExistente].cantidad_fisica_estimada = cantFisica;
-      copia[indexExistente].cantidad_virtual_estimada = cantVirtual;
+      copia[indexExistente].cantidad_fisica_estimada = nuevoTotalBase;
       setProductosPedido(copia);
       sileo.info(`Se actualizó la cantidad de "${productoEnSeleccion.ProductoNombre}".`);
     } else {
-      const cantFisica = Math.min(totalEnUnidadBase, stockFisico);
-      const cantVirtual = Math.max(0, parseFloat((totalEnUnidadBase - cantFisica).toFixed(2)));
-
       const nuevoItem = {
         producto_id: productoEnSeleccion.ProductoId,
         producto_nombre: productoEnSeleccion.ProductoNombre,
@@ -836,25 +823,16 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         unidad_abreviatura: unidadSeleccionada?.abreviatura || productoEnSeleccion.unidad_base || 'UND',
         unidad_descripcion: unidadSeleccionada?.descripcion,
         factor_conversion: factorConversion,
-        stock_fisico: stockFisico,
-        stock_virtual_disponible: stockVirtualDisp,
+        stock_fisico: stockTotal,
         stock_total: stockTotal,
-        cantidad_fisica_estimada: cantFisica,
-        cantidad_virtual_estimada: cantVirtual,
+        cantidad_fisica_estimada: totalEnUnidadBase,
         precio_unitario: precio,
         cantidad: cantidad,
         subtotal: parseFloat((cantidad * precio).toFixed(2)),
       };
 
       setProductosPedido(prev => [...prev, nuevoItem]);
-      if (cantVirtual > 0) {
-        sileo.info({
-          title: 'Stock Virtual Activado',
-          description: `"${productoEnSeleccion.ProductoNombre}": Se consumirán ${cantFisica} de stock físico y ${cantVirtual} de stock virtual de respaldo.`,
-        });
-      } else {
-        sileo.success(`"${productoEnSeleccion.ProductoNombre}" agregado al pedido con stock físico.`);
-      }
+      sileo.success(`"${productoEnSeleccion.ProductoNombre}" agregado al pedido.`);
     }
 
     setProductoEnSeleccion(null);
@@ -903,18 +881,13 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       return;
     }
 
-    const stockFisico = itemEnEdicion.stock_fisico ?? itemEnEdicion.stock_actual ?? 0;
-    const cantFisica = Math.min(totalBase, stockFisico);
-    const cantVirtual = Math.max(0, parseFloat((totalBase - cantFisica).toFixed(2)));
-
     const copia = [...productosPedido];
     copia[itemEnEdicion.indexOriginal] = {
       ...itemEnEdicion,
       cantidad: cant,
       precio_unitario: prec,
       subtotal: parseFloat((cant * prec).toFixed(2)),
-      cantidad_fisica_estimada: cantFisica,
-      cantidad_virtual_estimada: cantVirtual,
+      cantidad_fisica_estimada: totalBase,
     };
 
     setProductosPedido(copia);
@@ -1027,26 +1000,20 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
           acuerdo: acuerdoComercial,
         });
 
-        // Actualización optimista del stock físico y virtual en el catálogo del selector de productos
+        // Actualización optimista del stock físico en el catálogo del selector de productos
         const itemsDescontados = [...productosPedido];
         setProductosSelect(prevProds => {
           return (Array.isArray(prevProds) ? prevProds : []).map(prod => {
             const matchItem = itemsDescontados.find(p => p.producto_id === prod.ProductoId);
             if (matchItem) {
               const cantFactor = (parseFloat(matchItem.cantidad) || 0) * (parseFloat(matchItem.factor_conversion) || 1);
-              const stockFisicoActual = parseFloat(prod.ProductoStockActual || 0);
-              const consumoFisico = Math.min(cantFactor, stockFisicoActual);
-              const consumoVirtual = Math.max(0, cantFactor - consumoFisico);
-              const nuevoStockFisico = Math.max(0, stockFisicoActual - consumoFisico);
-              const nuevoConsumidoVirtual = (parseFloat(prod.ProductoStockVirtualConsumido) || 0) + consumoVirtual;
-              const bufferVirtual = parseFloat(prod.ProductoStockVirtual) || 50;
-              const nuevoVirtualDisp = Math.max(0, bufferVirtual - nuevoConsumidoVirtual);
+              const stockActual = parseFloat(prod.ProductoStockActual ?? 0) || 0;
+              const nuevoStock = Math.max(0, stockActual - cantFactor);
               return {
                 ...prod,
-                ProductoStockActual: nuevoStockFisico,
-                ProductoStockVirtualConsumido: nuevoConsumidoVirtual,
-                stock_virtual_disponible: nuevoVirtualDisp,
-                stock_total_vendible: nuevoStockFisico + nuevoVirtualDisp,
+                ProductoStockActual: nuevoStock,
+                stock_total_vendible: nuevoStock,
+                stock_actual_texto: `${Math.round(nuevoStock)} ${prod.unidad_base || 'UND'}`,
               };
             }
             return prod;
@@ -1580,15 +1547,11 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto divide-y divide-slate-100">
                     {productosFiltrados.length > 0 ? (
                       productosFiltrados.map((p) => {
-                        const stockFisico = parseFloat(p.ProductoStockActual || 0);
-                        const bufferVirtual = parseFloat(p.ProductoStockVirtual ?? 50);
-                        const consumidoVirtual = parseFloat(p.ProductoStockVirtualConsumido ?? 0);
-                        const stockVirtualDisp = parseFloat(
-                          p.stock_virtual_disponible !== undefined
-                            ? p.stock_virtual_disponible
-                            : Math.max(0, bufferVirtual - consumidoVirtual)
-                        );
-                        const stockTotal = parseFloat((stockFisico + stockVirtualDisp).toFixed(2));
+                        const rawStock = p.ProductoStockActual;
+                        const stockFisico = (rawStock !== null && rawStock !== undefined && !isNaN(Number(rawStock)))
+                          ? parseFloat(rawStock)
+                          : 0;
+                        const stockTotal = Math.max(0, stockFisico);
                         const tieneStock = stockTotal > 0;
                         return (
                           <div
@@ -1608,10 +1571,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   : 'bg-rose-50 text-rose-700 border border-rose-200'
                               }`}>
-                                Vendible: {stockTotal} {p.unidad_base || 'UND'}
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                Físico: <strong className="text-slate-700">{stockFisico}</strong> | Virtual: <strong className="text-indigo-600">+{stockVirtualDisp}</strong>
+                                {tieneStock ? `Stock: ${stockTotal} ${p.unidad_base || 'UND'}` : 'Sin Stock'}
                               </span>
                             </div>
                           </div>
@@ -1635,28 +1595,18 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                         {productoEnSeleccion.ProductoNombre}
                       </h4>
                       {(() => {
-                        const sFisico = parseFloat(productoEnSeleccion.ProductoStockActual || 0);
-                        const sVirtBuff = parseFloat(productoEnSeleccion.ProductoStockVirtual ?? 50);
-                        const sVirtCons = parseFloat(productoEnSeleccion.ProductoStockVirtualConsumido ?? 0);
-                        const sVirtDisp = parseFloat(
-                          productoEnSeleccion.stock_virtual_disponible !== undefined
-                            ? productoEnSeleccion.stock_virtual_disponible
-                            : Math.max(0, sVirtBuff - sVirtCons)
-                        );
-                        const sTotal = parseFloat((sFisico + sVirtDisp).toFixed(2));
+                        const rawStock = productoEnSeleccion.ProductoStockActual;
+                        const sFisico = (rawStock !== null && rawStock !== undefined && !isNaN(Number(rawStock)))
+                          ? parseFloat(rawStock)
+                          : 0;
+                        const sTotal = Math.max(0, sFisico);
                         return (
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             <span className="text-[11px] text-slate-500">
                               Marca: <strong className="text-slate-700">{productoEnSeleccion.ProductoMarca}</strong>
                             </span>
-                            <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-semibold border border-slate-200">
-                              Físico: {sFisico} {productoEnSeleccion.unidad_base}
-                            </span>
-                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-semibold border border-indigo-200">
-                              Virtual Disp: {sVirtDisp} {productoEnSeleccion.unidad_base}
-                            </span>
                             <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                              Total Vendible: {sTotal} {productoEnSeleccion.unidad_base}
+                              Stock Disponible: {sTotal} {productoEnSeleccion.unidad_base || 'UND'}
                             </span>
                           </div>
                         );
@@ -1813,11 +1763,6 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                             <p className="font-bold text-slate-800">{item.producto_nombre}</p>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
                               <span>{item.producto_marca} • {item.producto_id}</span>
-                              {item.cantidad_virtual_estimada > 0 && (
-                                <span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[9px] font-semibold">
-                                  Respaldo Virtual: {item.cantidad_virtual_estimada} {item.unidad_abreviatura}
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="py-3 px-3">
@@ -2724,7 +2669,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                           <tr>
                             <th className="py-2.5 px-3">Producto</th>
                             <th className="py-2.5 px-3 text-center">Cant. Total</th>
-                            <th className="py-2.5 px-3 text-center">Consumo Stock</th>
+                            <th className="py-2.5 px-3 text-center min-w-[140px]">Stock Físico Comprometido</th>
                             <th className="py-2.5 px-3 text-right">Precio</th>
                             <th className="py-2.5 px-3 text-right">Subtotal</th>
                           </tr>
@@ -2733,8 +2678,6 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                           {(ordenDetalle.detalles || []).map((d, i) => {
                             const cantTotal = parseFloat(d.cantidad || 0);
                             const cantFisica = parseFloat(d.cantidad_fisica !== undefined ? d.cantidad_fisica : cantTotal);
-                            const cantVirtual = parseFloat(d.cantidad_virtual || 0);
-                            const usaVirtual = cantVirtual > 0;
                             return (
                               <tr key={i}>
                                 <td className="py-2.5 px-3">
@@ -2751,23 +2694,14 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                                     </span>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-3 text-center">
+                                <td className="py-2.5 px-3 text-center min-w-[140px]">
                                   <div className="inline-flex flex-col items-center gap-0.5">
-                                    <span className="text-[11px] font-medium text-slate-700">
-                                      {cantFisica} Físico
+                                    <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                                      {cantFisica} Físico Real
                                     </span>
-                                    {usaVirtual ? (
-                                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
-                                        + {cantVirtual} Virtual
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] text-slate-400">
-                                        0 Virtual
-                                      </span>
-                                    )}
                                     {d.factor_conversion > 1 && (
-                                      <span className="text-[9px] text-slate-400">
-                                        Total: {cantFisica + cantVirtual} UND
+                                      <span className="text-[9px] text-blue-600 font-medium">
+                                        Total: {d.cantidad_base || (cantFisica * d.factor_conversion)} UND
                                       </span>
                                     )}
                                   </div>
