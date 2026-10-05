@@ -1,7 +1,7 @@
 import React from 'react';
 import SafeApexChart from './SafeApexChart';
 
-export default function AreaChart({ data = [], isMoney = false }) {
+export default function AreaChart({ data = [], isMoney = false, yAxisMax = undefined }) {
   const categories = data.map(d => d.etapa || (d.fecha ? d.fecha.substring(5) : ''));
   const hasCommercial = data.length > 0 && data.some(d => d.monto_perdido !== undefined || d.monto_salvado !== undefined);
 
@@ -51,6 +51,7 @@ export default function AreaChart({ data = [], isMoney = false }) {
         style: { fontSize: '11px', colors: '#64748b' },
         formatter: (val) => isMoney ? `S/ ${val}` : `${val}`,
       },
+      ...(yAxisMax !== undefined && yAxisMax !== null ? { max: yAxisMax } : {}),
     },
     tooltip: {
       y: {

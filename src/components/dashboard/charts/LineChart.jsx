@@ -1,6 +1,6 @@
 import SafeApexChart from './SafeApexChart';
 
-export default function LineChart({ data = [], isIdealVsReal = false }) {
+export default function LineChart({ data = [], isIdealVsReal = false, yAxisMax = undefined }) {
   let categories = [];
   let series = [];
 
@@ -75,6 +75,7 @@ export default function LineChart({ data = [], isIdealVsReal = false }) {
         style: { fontSize: '11px', colors: '#64748b' },
         formatter: (val) => `${Math.round(val)}${isIdealVsReal ? 's' : 'm'}`,
       },
+      ...(yAxisMax !== undefined && yAxisMax !== null ? { max: yAxisMax } : {}),
     },
     legend: {
       position: 'top',

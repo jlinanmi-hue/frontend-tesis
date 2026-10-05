@@ -138,13 +138,19 @@ function resolveNombreUsuario(rawUser, activeUser, personalList = []) {
 /**
  * Subcomponente de fila de item para separación limpia de lógica
  */
-export function DocumentoOrdenItem({ item, index }) {
+export function DocumentoOrdenItem({ item, index, isCompra = false }) {
   const codigo = item.codigo || item.producto_id || item.ProductoId || item.id || '---';
   const cantidad = typeof item.cantidad === 'number'
     ? item.cantidad.toFixed(2)
     : parseFloat(item.cantidad || 0).toFixed(2);
-  const medida = (item.medida || item.unidad_abreviatura || item.unidad || 'UND').toUpperCase();
+  const cantEntera = typeof item.cantidad === 'number'
+    ? item.cantidad.toFixed(0)
+    : parseFloat(item.cantidad || 0).toFixed(0);
+  const factor = Number(item.factor_conversion || 1);
+  const abrev = (item.medida || item.unidad_abreviatura || item.unidad_medida_abreviatura || item.unidad || 'UND').toUpperCase();
+  const medida = (item.presentacion_completa || (factor > 1 ? `${abrev} (${factor} UND)` : abrev)).toUpperCase();
   const descripcion = (item.descripcion || item.producto_nombre || item.nombre || 'PRODUCTO').toUpperCase();
+  const marca = (item.marca || item.producto_marca || '---').toUpperCase();
   const suc = (item.suc || item.sucursal || item.almacen || 'AC').toUpperCase();
   const precio = typeof item.precio === 'number'
     ? item.precio.toFixed(2)
@@ -152,6 +158,20 @@ export function DocumentoOrdenItem({ item, index }) {
   const total = typeof item.total === 'number'
     ? item.total.toFixed(2)
     : parseFloat(item.total || item.subtotal || (item.cantidad * item.precio) || 0).toFixed(2);
+
+  if (isCompra) {
+    return (
+      <tr className="border-none text-[11px] sm:text-[12px] font-mono leading-tight hover:bg-slate-50/60 print:hover:bg-transparent">
+        <td className="py-1 pr-2 text-left font-semibold text-black whitespace-nowrap">{codigo}</td>
+        <td className="py-1 px-2 text-left text-black uppercase font-medium truncate max-w-[320px] sm:max-w-none">
+          {descripcion}
+        </td>
+        <td className="py-1 px-2 text-left text-black uppercase whitespace-nowrap">{marca}</td>
+        <td className="py-1 px-2 text-center text-black whitespace-nowrap">{medida}</td>
+        <td className="py-1 pl-2 text-center font-bold text-black whitespace-nowrap">{cantEntera}</td>
+      </tr>
+    );
+  }
 
   return (
     <tr className="border-none text-[11px] sm:text-[12px] font-mono leading-tight hover:bg-slate-50/60 print:hover:bg-transparent">
@@ -391,57 +411,82 @@ export default function DocumentoOrdenOficial({
         </div>
       </div>
 
-      {/* ===== 4. TABLA EXACTA DEL FORMATO FÍSICO ===== */}
-      <div className="mt-3 mb-2">
-        <table className="w-full border-collapse font-mono">
-          <thead>
-            <tr className="border-t border-b-2 border-black text-[10px] sm:text-[11px] font-bold text-black">
-              <th className="py-1 pr-2 text-left whitespace-nowrap">CODIGO</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">CANTID</th>
-              <th className="py-1 px-2 text-left whitespace-nowrap">MEDIDA</th>
-              <th className="py-1 px-2 text-left">DESCRIPCION DEL PRODUCTO</th>
-              <th className="py-1 px-2 text-center whitespace-nowrap">SUC</th>
-              <th className="py-1 px-2 text-right whitespace-nowrap">PRECIO</th>
-              <th className="py-1 pl-2 text-right whitespace-nowrap">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y-0">
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-6 text-center text-slate-400 font-mono text-xs">
-                  --- Sin ítems registrados en esta orden ---
-                </td>
-              </tr>
-            ) : (
-              items.map((it, idx) => (
-                <DocumentoOrdenItem key={idx} item={it} index={idx} />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Línea divisoria de fin de tabla */}
-      <div className="border-t border-black mb-3" />
-
-      {/* ===== 5. PIE DE TOTALES ===== */}
-      <div className="flex justify-end pt-1 font-mono text-[11px] sm:text-[12px] text-black">
-        {/* Lado derecho: Totales escalonados */}
-        <div className="text-right space-y-0.5 font-mono">
-          <div className="flex justify-end gap-4">
-            <span className="font-bold">TOTAL:</span>
-            <span className="font-semibold w-24 text-right">{subtotalVal}</span>
-          </div>
-          <div className="flex justify-end gap-4">
-            <span className="font-bold">TOTAL IGV:</span>
-            <span className="font-semibold w-24 text-right">{totalIgvVal}</span>
-          </div>
-          <div className="flex justify-end gap-4">
-            <span className="font-bold">TOTAL GENERAL:</span>
-            <span className="font-bold w-24 text-right">{totalGeneralVal}</span>
-          </div>
+        {/* ===== 4. TABLA EXACTA DEL FORMATO ===== */}
+        <div className="mt-3 mb-2">
+          <table className="w-full border-collapse font-mono">
+            <thead>
+              {headerType === 'ORDEN DE COMPRA' ? (
+                <tr className="border-t border-b-2 border-black text-[10px] sm:text-[11px] font-bold text-black">
+                  <th className="py-1 pr-2 text-left whitespace-nowrap">CODIGO</th>
+                  <th className="py-1 px-2 text-left">DESCRIPCION DEL PRODUCTO</th>
+                  <th className="py-1 px-2 text-left whitespace-nowrap">MARCA</th>
+                  <th className="py-1 px-2 text-center whitespace-nowrap">PRESENTACION</th>
+                  <th className="py-1 pl-2 text-center whitespace-nowrap">CANT. SOLICITADA</th>
+                </tr>
+              ) : (
+                <tr className="border-t border-b-2 border-black text-[10px] sm:text-[11px] font-bold text-black">
+                  <th className="py-1 pr-2 text-left whitespace-nowrap">CODIGO</th>
+                  <th className="py-1 px-2 text-right whitespace-nowrap">CANTID</th>
+                  <th className="py-1 px-2 text-left whitespace-nowrap">MEDIDA</th>
+                  <th className="py-1 px-2 text-left">DESCRIPCION DEL PRODUCTO</th>
+                  <th className="py-1 px-2 text-center whitespace-nowrap">SUC</th>
+                  <th className="py-1 px-2 text-right whitespace-nowrap">PRECIO</th>
+                  <th className="py-1 pl-2 text-right whitespace-nowrap">TOTAL</th>
+                </tr>
+              )}
+            </thead>
+            <tbody className="divide-y-0">
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={headerType === 'ORDEN DE COMPRA' ? 5 : 7} className="py-6 text-center text-slate-400 font-mono text-xs">
+                    --- Sin ítems registrados en esta orden ---
+                  </td>
+                </tr>
+              ) : (
+                items.map((it, idx) => (
+                  <DocumentoOrdenItem key={idx} item={it} index={idx} isCompra={headerType === 'ORDEN DE COMPRA'} />
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
+
+        {/* Línea divisoria de fin de tabla */}
+        <div className="border-t border-black mb-3" />
+
+        {/* ===== 5. PIE DE TOTALES ===== */}
+        {headerType === 'ORDEN DE COMPRA' ? (
+          <div className="flex justify-between items-center pt-1 font-mono text-[11px] sm:text-[12px] text-black">
+            <span className="text-[10px] text-slate-600 uppercase font-semibold">Documento Oficial de Solicitud de Mercadería</span>
+            <div className="text-right space-y-0.5 font-mono">
+              <div className="flex justify-end gap-4">
+                <span className="font-bold">TOTAL ITEMS:</span>
+                <span className="font-bold w-24 text-right">{items.length} producto(s)</span>
+              </div>
+              <div className="flex justify-end gap-4">
+                <span className="font-bold">TOTAL CANTIDAD:</span>
+                <span className="font-bold w-24 text-right">{items.reduce((acc, it) => acc + Number(it.cantidad || 0), 0)}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end pt-1 font-mono text-[11px] sm:text-[12px] text-black">
+            <div className="text-right space-y-0.5 font-mono">
+              <div className="flex justify-end gap-4">
+                <span className="font-bold">TOTAL:</span>
+                <span className="font-semibold w-24 text-right">{subtotalVal}</span>
+              </div>
+              <div className="flex justify-end gap-4">
+                <span className="font-bold">TOTAL IGV:</span>
+                <span className="font-semibold w-24 text-right">{totalIgvVal}</span>
+              </div>
+              <div className="flex justify-end gap-4">
+                <span className="font-bold">TOTAL GENERAL:</span>
+                <span className="font-bold w-24 text-right">{totalGeneralVal}</span>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 

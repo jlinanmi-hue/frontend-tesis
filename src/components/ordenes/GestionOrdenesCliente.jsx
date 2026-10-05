@@ -37,11 +37,13 @@ import {
   ExternalLink,
   MessageSquare,
   Bot,
-  User
+  User,
+  Zap
 } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
+import ModalCompraRapida from './ModalCompraRapida';
 
 export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefill = null }) {
   // Pestaña activa: 'nueva' (Registrar Pedido) | 'historial' (Historial y Monitoreo)
@@ -244,6 +246,28 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   const [ordenParaCompletar, setOrdenParaCompletar] = useState(null);
   const [estadoDespachoCompletar, setEstadoDespachoCompletar] = useState('ENTREGADO_COMPLETO');
   const [isCompleting, setIsCompleting] = useState(false);
+
+  // Modal de Compra Rápida por Quiebre de Stock
+  const [showModalCompraRapida, setShowModalCompraRapida] = useState(false);
+  const [compraRapidaParams, setCompraRapidaParams] = useState({
+    producto: null,
+    cantidad: 1,
+    motivo: ''
+  });
+
+  const handleAbrirCompraRapida = (producto, faltante = 1) => {
+    setCompraRapidaParams({
+      producto: producto,
+      cantidad: faltante,
+      motivo: `Abastecimiento de emergencia a PYME Vecina por quiebre de stock en pedido cliente (${clienteSeleccionado?.ClienteNombre || 'Cliente'})`
+    });
+    setShowModalCompraRapida(true);
+  };
+
+  const handleCompraRapidaExitosa = async () => {
+    await cargarCatalogos();
+    sileo.success('⚡ Stock reabastecido con éxito. Ahora puedes continuar con el pedido del cliente.');
+  };
 
   // Modal Imprimir Comprobante / Ticket
   const [showModalTicket, setShowModalTicket] = useState(false);
@@ -783,9 +807,11 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
     if (totalEnUnidadBase > stockTotal) {
       const faltante = parseFloat((totalEnUnidadBase - stockTotal).toFixed(2));
+      const faltanteEnUnidad = Math.ceil(faltante / factorConversion);
+      handleAbrirCompraRapida(productoEnSeleccion, faltanteEnUnidad);
       sileo.error({
         title: 'Stock Insuficiente',
-        description: `No hay stock suficiente para cubrir ${totalEnUnidadBase} ${unidadTexto}. Stock físico disponible: ${stockTotal} ${unidadTexto}. Faltan ${faltante} ${unidadTexto} para cubrir el pedido.`,
+        description: `No hay stock suficiente para cubrir ${totalEnUnidadBase} ${unidadTexto}. Faltan ${faltante} ${unidadTexto}. Se ha habilitado la opción de Compra Rápida a PYME Vecina para reabastecer al instante.`,
       });
       return;
     }
@@ -800,9 +826,11 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
       if (nuevoTotalBase > stockTotal) {
         const faltante = parseFloat((nuevoTotalBase - stockTotal).toFixed(2));
+        const faltanteEnUnidad = Math.ceil(faltante / factorConversion);
+        handleAbrirCompraRapida(productoEnSeleccion, faltanteEnUnidad);
         sileo.error({
           title: 'Stock Insuficiente',
-          description: `Supera el stock físico disponible (${stockTotal} ${unidadTexto}). Ya tenía ${cantidadPrevia} en el pedido y solicitó ${cantidad} más (Total: ${nuevoTotalBase} ${unidadTexto}). Faltan ${faltante} ${unidadTexto}.`,
+          description: `Supera el stock físico disponible (${stockTotal} ${unidadTexto}). Ya tenía ${cantidadPrevia} y solicitó ${cantidad} más (Total: ${nuevoTotalBase} ${unidadTexto}). Faltan ${faltante} ${unidadTexto}. Se ha habilitado la opción de Compra Rápida.`,
         });
         return;
       }
@@ -1687,6 +1715,38 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                       />
                     </div>
                   </div>
+
+                  {/* Banner de Quiebre de Stock / Compra Rápida a PYME Vecina */}
+                  {(() => {
+                    const rawStockSel = productoEnSeleccion.ProductoStockActual;
+                    const stockFisicoSel = (rawStockSel !== null && rawStockSel !== undefined && !isNaN(Number(rawStockSel))) ? parseFloat(rawStockSel) : 0;
+                    const factorConversionSel = parseFloat(unidadSeleccionada?.factor_conversion || 1);
+                    const cantDeseadaBase = (parseFloat(cantidadInput) || 0) * factorConversionSel;
+                    const hayQuiebre = cantDeseadaBase > stockFisicoSel;
+                    const faltanteBase = Math.max(0, parseFloat((cantDeseadaBase - stockFisicoSel).toFixed(2)));
+                    const faltanteEnUnidad = Math.ceil(faltanteBase / factorConversionSel);
+
+                    if (!hayQuiebre || cantDeseadaBase <= 0) return null;
+
+                    return (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in">
+                        <div className="flex items-center gap-2 text-amber-900">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>
+                            <strong>Stock insuficiente:</strong> Faltan {faltanteBase} {productoEnSeleccion.unidad_base || 'UND'} para cubrir la cantidad solicitada.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAbrirCompraRapida(productoEnSeleccion, faltanteEnUnidad)}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto shadow-xs"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>⚡ Registrar Compra Rápida a PYME Vecina</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
                     <div className="text-xs text-slate-600">
@@ -3005,6 +3065,20 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
             ruc: datosEmpresa?.EmpresaRuc || '10181935451',
             logo: datosEmpresa?.EmpresaLogo || null,
           }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL COMPRA RÁPIDA POR ROTURA DE STOCK                                  */}
+      {/* ========================================================================= */}
+      {showModalCompraRapida && (
+        <ModalCompraRapida
+          isOpen={showModalCompraRapida}
+          onClose={() => setShowModalCompraRapida(false)}
+          productoInicial={compraRapidaParams.producto}
+          cantidadInicial={compraRapidaParams.cantidad}
+          motivoInicial={compraRapidaParams.motivo}
+          onCompraExitosa={handleCompraRapidaExitosa}
         />
       )}
     </div>

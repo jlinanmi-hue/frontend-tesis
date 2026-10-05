@@ -1,7 +1,7 @@
 import SafeApexChart from './SafeApexChart';
 import { Zap, Target, Clock } from 'lucide-react';
 
-export default function ScatterChart({ data = [] }) {
+export default function ScatterChart({ data = [], yAxisMax = undefined }) {
   // Manejo de datos y cálculo de métricas
   const validData = Array.isArray(data) && data.length > 0 ? data : [
     { pedido_id: 'PED-001', items: 1, tiempo_seg: 2.3, tiempo_manual_estandar: 50, meta_sla: 10 },
@@ -90,7 +90,7 @@ export default function ScatterChart({ data = [] }) {
     },
     yaxis: {
       min: 0,
-      max: 12,
+      max: yAxisMax !== undefined && yAxisMax !== null ? yAxisMax : 12,
       tickAmount: 6,
       title: {
         text: 'Tiempo de Búsqueda (seg)',

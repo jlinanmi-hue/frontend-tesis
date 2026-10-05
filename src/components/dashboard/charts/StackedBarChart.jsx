@@ -1,7 +1,7 @@
 import SafeApexChart from './SafeApexChart';
 import { Bot, User } from 'lucide-react';
 
-export default function StackedBarChart({ data = [], isOrigin = false }) {
+export default function StackedBarChart({ data = [], isOrigin = false, yAxisMax = undefined }) {
   // Manejo de datos según sea origen (IA vs Manual) o serie temporal (by_day)
   let categories = [];
   let series = [];
@@ -56,6 +56,7 @@ export default function StackedBarChart({ data = [], isOrigin = false }) {
       labels: {
         style: { fontSize: '11px', colors: '#64748b' },
       },
+      ...(yAxisMax !== undefined && yAxisMax !== null ? { max: yAxisMax } : {}),
     },
     legend: {
       show: !isOrigin,

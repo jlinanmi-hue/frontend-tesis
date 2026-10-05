@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Loader2, Maximize2, ThumbsUp, ThumbsDown, Check, AlertTriangle, Zap, Sparkles } from 'lucide-react';
+import { X, Loader2, Maximize2, ThumbsUp, ThumbsDown, Check, AlertTriangle, Zap, Sparkles, Truck, Award, Building2 } from 'lucide-react';
 import api from '../../services/api';
 import IndicatorFilters from './filters/IndicatorFilters';
 import FunnelChart from './charts/FunnelChart';
@@ -11,6 +11,7 @@ import PieChart from './charts/PieChart';
 import AreaChart from './charts/AreaChart';
 import ScatterChart from './charts/ScatterChart';
 import GaugeChart from './charts/GaugeChart';
+import IndicatorCompareModal from './IndicatorCompareModal';
 
 function InterpretationBox({ text }) {
   return (
@@ -28,6 +29,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
   const [filters, setFilters] = useState({
     mes: indicatorData?.periodo || '2026-09',
     semana: indicatorData?.periodo || '2026-W37',
@@ -120,6 +122,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
             autoRefresh={autoRefresh}
             onToggleAutoRefresh={() => setAutoRefresh(!autoRefresh)}
             onExport={handleExport}
+            onCompare={() => setShowCompareModal(true)}
           />
         </div>
 
@@ -509,6 +512,132 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
                     />
                     <InterpretationBox text="Supervisa en tiempo real los artículos en zona de riesgo que requieren abastecimiento inmediato antes de alcanzar quiebre total." />
                   </div>
+
+                  {/* Subgráfico E: Confiabilidad y Cumplimiento de Proveedores (OTIF / OTD / Lead Time) */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                          <Truck className="w-4 h-4 text-blue-600" />
+                          <span>Subgráfico E: Confiabilidad de Proveedores (OTIF, OTD y Lead Time)</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Evaluación de entregas de órdenes de compra como fuente oficial de reabastecimiento para mitigar roturas de stock.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                        KPI Logístico Oficial
+                      </span>
+                    </div>
+
+                    {/* Tarjetas resumen de KPIs de proveedores */}
+                    {(() => {
+                      const cp = data.cumplimiento_proveedores || {};
+                      const otd = Number(cp.otd ?? 100);
+                      const inFull = Number(cp.if ?? 100);
+                      const otif = Number(cp.otif ?? 100);
+                      const leadTime = Number(cp.lead_time_promedio_dias ?? 0);
+                      const ranking = cp.ranking || [];
+
+                      return (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+                              <span className="text-[11px] font-semibold text-slate-500 block">A Tiempo (OTD):</span>
+                              <span className="text-lg font-black text-slate-800">{otd.toFixed(1)}%</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">Entregas dentro de fecha</span>
+                            </div>
+
+                            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
+                              <span className="text-[11px] font-semibold text-slate-500 block">Completitud (IF):</span>
+                              <span className="text-lg font-black text-slate-800">{inFull.toFixed(1)}%</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">Sin faltantes en entrega</span>
+                            </div>
+
+                            <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
+                              <span className="text-[11px] font-bold text-blue-700 block">Índice OTIF Global:</span>
+                              <span className="text-lg font-black text-blue-900">{otif.toFixed(1)}%</span>
+                              <span className="text-[10px] text-blue-600 block mt-0.5">On-Time In-Full perfecto</span>
+                            </div>
+
+                            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+                              <span className="text-[11px] font-bold text-amber-700 block">Lead Time Promedio:</span>
+                              <span className="text-lg font-black text-amber-900">{leadTime.toFixed(1)} d</span>
+                              <span className="text-[10px] text-amber-600 block mt-0.5">Días de abastecimiento</span>
+                            </div>
+                          </div>
+
+                          {/* Tabla de Ranking de Proveedores */}
+                          <div>
+                            <h4 className="text-[11px] font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                              <Award className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Ranking de Desempeño y Tiempos de Entrega por Proveedor</span>
+                            </h4>
+
+                            {ranking.length === 0 ? (
+                              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center text-slate-400 text-xs">
+                                No hay órdenes de compra cerradas suficientes en el período para rankear proveedores.
+                              </div>
+                            ) : (
+                              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                                <table className="w-full text-left border-collapse text-xs">
+                                  <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                      <th className="py-2.5 px-3">Proveedor</th>
+                                      <th className="py-2.5 px-2 text-center">Órdenes</th>
+                                      <th className="py-2.5 px-2 text-center">OTD %</th>
+                                      <th className="py-2.5 px-2 text-center">OTIF %</th>
+                                      <th className="py-2.5 px-3 text-right">Lead Time Promedio</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {ranking.map((r, idx) => {
+                                      const otifVal = Number(r.otif_pct ?? 0);
+                                      const esOptimo = otifVal >= 90;
+                                      const esAlerta = otifVal < 75;
+
+                                      return (
+                                        <tr key={idx} className="hover:bg-slate-50/60">
+                                          <td className="py-2.5 px-3 font-semibold text-slate-800">
+                                            <div>{r.razon_social || r.proveedor_id}</div>
+                                            <div className="text-[10px] text-slate-400 font-normal">{r.proveedor_id}</div>
+                                          </td>
+                                          <td className="py-2.5 px-2 text-center font-bold text-slate-700">
+                                            {r.total_ordenes}
+                                          </td>
+                                          <td className="py-2.5 px-2 text-center font-bold text-slate-700">
+                                            {Number(r.otd_pct ?? 0).toFixed(0)}%
+                                          </td>
+                                          <td className="py-2.5 px-2 text-center">
+                                            <span
+                                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                                esOptimo
+                                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                  : esAlerta
+                                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                              }`}
+                                            >
+                                              {otifVal.toFixed(0)}%
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                                            {Number(r.lead_time_promedio_dias ?? 0).toFixed(1)} días
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          <InterpretationBox text="El índice OTIF (On-Time In-Full) y el Lead Time evalúan la confiabilidad de los proveedores. Un proveedor con bajo OTIF anticipa roturas de stock físico en mostrador y permite activar compras rápidas a PYME Vecina antes de impactar las ventas." />
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </>
               )}
 
@@ -649,6 +778,16 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
         </div>
 
       </div>
+
+      {/* Modal de Comparación de Subgráficos */}
+      {showCompareModal && (
+        <IndicatorCompareModal
+          indicatorId={indicatorId}
+          initialPeriod={indicatorId === 3 ? (filters.semana || '2026-W37') : (filters.mes || filters.semana || '2026-09')}
+          canal={filters.canal}
+          onClose={() => setShowCompareModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -850,7 +850,7 @@ export default function GestionClientes() {
             </span>
             <span className="text-slate-300">·</span>
             <span className="text-slate-600 font-medium">
-              {resumen.total_compras_acumuladas} {resumen.total_compras_acumuladas === 1 ? 'pedido' : 'pedidos'}
+              {resumen.total_compras_acumuladas} {resumen.total_compras_acumuladas === 1 ? 'orden' : 'órdenes'}
             </span>
           </div>
         </div>
@@ -986,22 +986,22 @@ export default function GestionClientes() {
                         </div>
                       </td>
 
-                      {/* Historial de Órdenes: Estado explícito si 0, o 'X pedidos · S/ Y' si >0 */}
+                      {/* Historial de Órdenes: Estado explícito si 0, o 'X órdenes · S/ Y' si >0 */}
                       <td className="py-3.5 px-4">
                         {compras === 0 ? (
                           <div className="flex items-center gap-1.5 text-slate-400 text-xs font-medium">
                             <Clock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                            <span>Sin compras registradas</span>
+                            <span>Sin órdenes registradas</span>
                           </div>
                         ) : (
                           <div>
                             <button
                               onClick={() => openOrderHistory(c)}
                               className="text-xs hover:text-blue-600 transition-colors flex items-center gap-1.5 cursor-pointer group/hist"
-                              title="Ver pedidos del cliente"
+                              title="Ver órdenes del cliente"
                             >
                               <span className="font-mono font-bold text-slate-900 group-hover/hist:text-blue-600">
-                                {compras} {compras === 1 ? 'pedido' : 'pedidos'}
+                                {compras} {compras === 1 ? 'orden' : 'órdenes'}
                               </span>
                               <span className="text-slate-300">·</span>
                               <span className="font-mono font-bold text-slate-700">

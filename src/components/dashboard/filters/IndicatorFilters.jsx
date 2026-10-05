@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Filter, RefreshCw, Download } from 'lucide-react';
+import { Calendar, Filter, RefreshCw, Download, GitCompare } from 'lucide-react';
 
 export default function IndicatorFilters({
   indicatorId,
@@ -8,6 +8,7 @@ export default function IndicatorFilters({
   autoRefresh,
   onToggleAutoRefresh,
   onExport,
+  onCompare,
 }) {
   const isWeekly = indicatorId === 3;
 
@@ -57,6 +58,19 @@ export default function IndicatorFilters({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Botón de Comparación de Períodos */}
+        {onCompare && (
+          <button
+            type="button"
+            onClick={onCompare}
+            className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg border border-blue-200 transition shadow-xs"
+            title="Comparar subgráficos entre dos períodos distintos"
+          >
+            <GitCompare className="w-3.5 h-3.5 text-blue-600" />
+            Comparar
+          </button>
+        )}
+
         {/* Toggle de Auto-Refresh */}
         <button
           type="button"

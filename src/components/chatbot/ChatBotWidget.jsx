@@ -261,6 +261,14 @@ export default function ChatBotWidget() {
   const [hasCustomPosition, setHasCustomPosition] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ARRASTRE DEL BOTÓN FLOTANTE LANZADOR (píldora Valencia AI cerrada)
+  const [launcherPos, setLauncherPos] = useState(null);
+  const [isDraggingLauncher, setIsDraggingLauncher] = useState(false);
+  const launcherDragStartRef = useRef({ x: 0, y: 0 });
+  const launcherInitialPosRef = useRef({ x: 0, y: 0 });
+  const launcherRef = useRef(null);
+  const launcherMovedRef = useRef(false);
+
   const dragStartRef = useRef({ x: 0, y: 0 });
   const initialPosRef = useRef({ x: 0, y: 0 });
   const windowRef = useRef(null);
@@ -269,6 +277,83 @@ export default function ChatBotWidget() {
   const audioChunksRef = useRef([]);
   const timerIntervalRef = useRef(null);
   const recordingStartTimeRef = useRef(null);
+
+  // Visualizador de niveles de voz en tiempo real (barras con vida)
+  const BAR_COUNT = 28;
+  const [audioLevels, setAudioLevels] = useState(() => Array(BAR_COUNT).fill(0));
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const rafVisualRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const smoothLevelsRef = useRef(Array(BAR_COUNT).fill(0));
+
+  const stopVisualizer = useCallback(() => {
+    if (rafVisualRef.current) {
+      cancelAnimationFrame(rafVisualRef.current);
+      rafVisualRef.current = null;
+    }
+    try {
+      analyserRef.current?.disconnect();
+    } catch (e) {}
+    analyserRef.current = null;
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
+    smoothLevelsRef.current = Array(BAR_COUNT).fill(0);
+    setAudioLevels(Array(BAR_COUNT).fill(0));
+  }, []);
+
+  const startVisualizer = useCallback((stream) => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      // Limpia instancia previa
+      if (rafVisualRef.current) cancelAnimationFrame(rafVisualRef.current);
+      try { audioContextRef.current?.close(); } catch (e) {}
+      const ctx = new Ctx();
+      audioContextRef.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.75;
+      src.connect(analyser);
+      analyserRef.current = analyser;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      let lastUpdate = 0;
+      const tick = (t) => {
+        rafVisualRef.current = requestAnimationFrame(tick);
+        analyser.getByteFrequencyData(data);
+        // Solo bins de voz humana (~60% bajos) y submuestreo a BAR_COUNT
+        const usable = Math.floor(data.length * 0.6);
+        const step = usable / BAR_COUNT;
+        const next = [];
+        for (let i = 0; i < BAR_COUNT; i++) {
+          const idx = Math.min(data.length - 1, Math.floor(i * step));
+          const v = data[idx] / 255; // 0..1
+          const prev = smoothLevelsRef.current[i] || 0;
+          const smoothed = prev * 0.55 + Math.pow(v, 1.2) * 0.45;
+          // Puerta de ruido: silencio => 0 (se renderiza como punto)
+          const gated = smoothed < 0.04 ? 0 : smoothed;
+          next.push(gated);
+          smoothLevelsRef.current[i] = gated;
+        }
+        // ~20fps para no saturar React
+        if (t - lastUpdate > 50) {
+          lastUpdate = t;
+          setAudioLevels([...next]);
+        }
+      };
+      rafVisualRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      console.warn('Visualizador de audio no disponible:', e);
+    }
+  }, []);
+
+  // Derivados para la tarjeta de grabación estilo WhatsApp
+  const isRecUrgent = recordingDuration >= 100;
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -375,6 +460,52 @@ export default function ChatBotWidget() {
   const handleResetPosition = () => {
     setPosition(calculateDefaultPosition());
     setHasCustomPosition(false);
+  };
+
+  // Arrastre del lanzador: mover la píldora por la pantalla, clic abre solo si no se arrastró
+  const handleLauncherPointerDown = (e) => {
+    if (e.button !== 0) return;
+    launcherMovedRef.current = false;
+    setIsDraggingLauncher(true);
+    launcherDragStartRef.current = { x: e.clientX, y: e.clientY };
+    const rect = launcherRef.current?.getBoundingClientRect();
+    if (rect) {
+      launcherInitialPosRef.current = launcherPos ? { ...launcherPos } : { x: rect.left, y: rect.top };
+    }
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+  };
+
+  const handleLauncherPointerMove = (e) => {
+    if (!isDraggingLauncher) return;
+    const dx = e.clientX - launcherDragStartRef.current.x;
+    const dy = e.clientY - launcherDragStartRef.current.y;
+    if (Math.abs(dx) + Math.abs(dy) > 5) launcherMovedRef.current = true;
+    const pillW = launcherRef.current?.offsetWidth || 220;
+    const pillH = launcherRef.current?.offsetHeight || 56;
+    const maxX = Math.max(8, window.innerWidth - pillW - 8);
+    const maxY = Math.max(8, window.innerHeight - pillH - 8);
+    const newX = Math.max(8, Math.min(maxX, launcherInitialPosRef.current.x + dx));
+    const newY = Math.max(8, Math.min(maxY, launcherInitialPosRef.current.y + dy));
+    setLauncherPos({ x: newX, y: newY });
+  };
+
+  const handleLauncherPointerUp = (e) => {
+    if (isDraggingLauncher) {
+      setIsDraggingLauncher(false);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+    }
+  };
+
+  const handleLauncherClick = () => {
+    if (launcherMovedRef.current) {
+      launcherMovedRef.current = false;
+      return;
+    }
+    setIsOpen(true);
   };
 
   // CONSULTAR AL BACKEND EL ESTADO DEL SERVICIO DE AUDIO
@@ -825,6 +956,8 @@ export default function ChatBotWidget() {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      startVisualizer(stream);
       const mimeType = getSupportedMimeType();
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -869,6 +1002,7 @@ export default function ChatBotWidget() {
   const stopRecording = (shouldSend = true) => {
     if (!mediaRecorderRef.current || !isRecording) return;
 
+    stopVisualizer();
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -883,6 +1017,10 @@ export default function ChatBotWidget() {
       try {
         recorder.stream?.getTracks().forEach((t) => t.stop());
       } catch (e) {}
+      try {
+        micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch (e) {}
+      micStreamRef.current = null;
 
       if (!shouldSend) {
         audioChunksRef.current = [];
@@ -992,6 +1130,9 @@ export default function ChatBotWidget() {
   useEffect(() => {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (rafVisualRef.current) cancelAnimationFrame(rafVisualRef.current);
+      try { audioContextRef.current?.close(); } catch (e) {}
+      try { micStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch (e) {}
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try {
           mediaRecorderRef.current.stream?.getTracks().forEach((t) => t.stop());
@@ -1220,14 +1361,32 @@ export default function ChatBotWidget() {
 
   return (
     <>
-      {/* BOTÓN FLOTANTE LANZADOR (cuando está cerrado) */}
+      {/* BOTÓN FLOTANTE LANZADOR MOVIBLE (cuando está cerrado) */}
       {!isOpen && (
-        <div className="fixed bottom-6 right-6 z-40 select-none">
+        <div
+          ref={launcherRef}
+          style={
+            launcherPos
+              ? {
+                  position: 'fixed',
+                  left: `${launcherPos.x}px`,
+                  top: `${launcherPos.y}px`,
+                  zIndex: 40,
+                }
+              : undefined
+          }
+          className={`z-40 select-none ${launcherPos ? '' : 'fixed bottom-6 right-6'}`}
+        >
           <button
             type="button"
-            onClick={() => setIsOpen(true)}
-            className="group relative flex items-center gap-3 pl-2.5 pr-4 py-2 bg-slate-900/95 hover:bg-slate-950 text-white rounded-full shadow-2xl shadow-slate-950/30 border border-slate-700/80 hover:border-blue-500/60 backdrop-blur-md transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95 cursor-pointer"
-            title="Abrir Asistente Valencia AI"
+            onClick={handleLauncherClick}
+            onPointerDown={handleLauncherPointerDown}
+            onPointerMove={handleLauncherPointerMove}
+            onPointerUp={handleLauncherPointerUp}
+            className={`group relative flex items-center gap-3 pl-2.5 pr-4 py-2 bg-slate-900/95 hover:bg-slate-950 text-white rounded-full shadow-2xl shadow-slate-950/30 border border-slate-700/80 hover:border-blue-500/60 backdrop-blur-md transition-all duration-300 transform active:scale-95 select-none ${
+              isDraggingLauncher ? 'cursor-grabbing scale-105 shadow-blue-500/20' : 'cursor-grab hover:-translate-y-0.5'
+            }`}
+            title="Arrastra para mover • Clic para abrir Asistente Valencia AI"
           >
             {/* Avatar AI con robot minimalista y baliza pulsante */}
             <div className="relative shrink-0">
@@ -1588,57 +1747,56 @@ export default function ChatBotWidget() {
             )}
 
             {isRecording ? (
-              <div className="flex items-center justify-between gap-2 p-2.5 bg-rose-50/90 border border-rose-200/90 rounded-2xl animate-in fade-in">
-                <div className="flex items-center gap-2.5">
-                  <span className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
+              <div className="flex items-center gap-2 px-2 py-2 bg-slate-50 border border-slate-200 rounded-full animate-in fade-in">
+                {/* Descartar */}
+                <button
+                  type="button"
+                  onClick={cancelRecording}
+                  className="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center shrink-0 transition cursor-pointer active:scale-95"
+                  title="Descartar grabación"
+                >
+                  <Trash2 className="w-[18px] h-[18px]" />
+                </button>
+
+                {/* Timer estilo WhatsApp */}
+                <div className="flex items-center gap-1.5 shrink-0 pl-1">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className={`text-[13px] tabular-nums font-medium ${isRecUrgent ? 'text-red-600' : 'text-slate-700'}`}>
+                    {formatTimer(recordingDuration)}
                   </span>
-                  <span className={`font-mono text-xs font-bold ${
-                    recordingDuration >= 110
-                      ? 'text-rose-700 animate-pulse font-extrabold'
-                      : recordingDuration >= 100
-                      ? 'text-amber-600 font-bold'
-                      : 'text-rose-600'
-                  }`}>
-                    {formatTimer(recordingDuration)} / 02:00
-                  </span>
-                  {recordingDuration >= 100 && (
-                    <span className="text-[10px] text-amber-600 font-medium hidden sm:inline">
-                      {recordingDuration >= 110 ? '¡Casi al límite!' : 'Tiempo por agotarse'}
-                    </span>
-                  )}
                 </div>
 
-                {/* Ondas visuales simuladas */}
-                <div className="flex items-center gap-0.5 px-2">
-                  <span className="w-1 h-3 bg-rose-400 rounded-full animate-pulse"></span>
-                  <span className="w-1 h-5 bg-rose-500 rounded-full animate-pulse [animation-delay:0.1s]"></span>
-                  <span className="w-1 h-4 bg-rose-400 rounded-full animate-pulse [animation-delay:0.2s]"></span>
-                  <span className="w-1 h-6 bg-rose-600 rounded-full animate-pulse [animation-delay:0.3s]"></span>
-                  <span className="w-1 h-3 bg-rose-400 rounded-full animate-pulse [animation-delay:0.15s]"></span>
+                {/* Waveform simple */}
+                <div
+                  className="flex-1 flex items-center gap-[2.5px] h-8 px-1 overflow-hidden"
+                  title="Nivel de micrófono"
+                >
+                  {audioLevels.map((lv, i) => {
+                    const active = lv > 0.02;
+                    const h = active ? 5 + lv * 22 : 4;
+                    return (
+                      <span
+                        key={i}
+                        style={{ height: `${Math.min(30, h)}px` }}
+                        className={`w-[3px] rounded-full transition-[height] duration-75 ${
+                          active ? 'bg-slate-700' : 'bg-slate-300'
+                        }`}
+                      />
+                    );
+                  })}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={cancelRecording}
-                    className="px-2.5 py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1"
-                    title="Descartar grabación"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Descartar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => stopRecording(true)}
-                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                    title="Terminar y enviar"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Listo</span>
-                  </button>
-                </div>
+                <span className="text-[11px] tabular-nums text-slate-400 shrink-0 hidden sm:inline">/ 2:00</span>
+
+                {/* Enviar circular */}
+                <button
+                  type="button"
+                  onClick={() => stopRecording(true)}
+                  className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center shrink-0 transition cursor-pointer shadow-md shadow-emerald-500/25 active:scale-95"
+                  title="Enviar nota de voz"
+                >
+                  <Send className="w-[18px] h-[18px] ml-0.5" />
+                </button>
               </div>
             ) : isTranscribing ? (
               <div className="flex items-center justify-center gap-2 p-2.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-2xl text-xs font-medium animate-in fade-in">

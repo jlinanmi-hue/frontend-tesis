@@ -10,6 +10,7 @@ export default function HorizontalBarChart({
   isStacked = false,
   height = 260,
   unit = '',
+  xAxisMax = undefined,
 }) {
   const categories = data.map(d => d[labelKey] || d.producto || d.zona || d.operario || d.ProductoNombre || '');
   const series = customSeries || [
@@ -44,6 +45,7 @@ export default function HorizontalBarChart({
     xaxis: {
       categories: categories,
       labels: { style: { fontSize: '11px', colors: '#64748b' } },
+      ...(xAxisMax !== undefined && xAxisMax !== null ? { max: xAxisMax } : {}),
     },
     yaxis: {
       labels: {

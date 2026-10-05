@@ -20,16 +20,28 @@ import {
   X,
   Package,
   FileCheck,
-  Camera,
-  Image as ImageIcon,
   Printer,
-  Zap
+  Zap,
+  History,
+  PackageCheck,
+  AlertOctagon,
+  Calendar,
+  MoreVertical
 } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
+import ModalRecepcionMercaderia from './ModalRecepcionMercaderia';
+import ModalAnularRecepcion from './ModalAnularRecepcion';
+import ModalHistorialRecepcion from './ModalHistorialRecepcion';
+import ModalCompraRapida from './ModalCompraRapida';
 
-export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefill = null, onNavigateToPredicciones = null }) {
+export default function GestionOrdenesCompra({ 
+  aiPrefill = null, 
+  onClearAiPrefill = null, 
+  onNavigateToPredicciones = null,
+  onNavigateToRecepcion = null
+}) {
   // Pestaña activa: 'nueva' (Generar Orden) | 'historial' (Historial de Órdenes)
   const [activeTab, setActiveTab] = useState('nueva');
 
@@ -92,22 +104,32 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
   const [ordenDetalle, setOrdenDetalle] = useState(null);
   const [isLoadingDetalle, setIsLoadingDetalle] = useState(false);
 
-  // Modal Cambiar Estado
-  const [showModalEstado, setShowModalEstado] = useState(false);
-  const [ordenParaEstado, setOrdenParaEstado] = useState(null);
-  const [nuevoEstadoSeleccionado, setNuevoEstadoSeleccionado] = useState('C');
-  const [motivoCambioEstado, setMotivoCambioEstado] = useState('');
-  const [isUpdatingEstado, setIsUpdatingEstado] = useState(false);
+  // Menú de Acciones (3 puntos) y Modal de Eliminación
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [showModalEliminar, setShowModalEliminar] = useState(false);
+  const [ordenParaEliminar, setOrdenParaEliminar] = useState(null);
+  const [isEliminando, setIsEliminando] = useState(false);
 
-  // Modal Confirmar Anulación
-  const [showModalAnular, setShowModalAnular] = useState(false);
-  const [ordenParaAnular, setOrdenParaAnular] = useState(null);
-  const [isAnulando, setIsAnulando] = useState(false);
 
   // Modal Formato Físico Oficial de Orden de Compra
   const [showModalOficial, setShowModalOficial] = useState(false);
   const [ticketOrdenCompra, setTicketOrdenCompra] = useState(null);
   const [datosEmpresa, setDatosEmpresa] = useState(null);
+
+  // Fecha Estimada de Llegada (Lead Time)
+  const [fechaEntregaEstimada, setFechaEntregaEstimada] = useState('');
+
+  // Modales de Recepción Oficial, Anulación y Compra Rápida
+  const [showModalRecepcion, setShowModalRecepcion] = useState(false);
+  const [ordenIdParaRecepcion, setOrdenIdParaRecepcion] = useState(null);
+
+  const [showModalAnularRecepcion, setShowModalAnularRecepcion] = useState(false);
+  const [ordenIdParaAnularRecepcion, setOrdenIdParaAnularRecepcion] = useState(null);
+
+  const [showModalHistorialRecepcion, setShowModalHistorialRecepcion] = useState(false);
+  const [ordenIdParaHistorial, setOrdenIdParaHistorial] = useState(null);
+
+  const [showModalCompraRapida, setShowModalCompraRapida] = useState(false);
 
   useEffect(() => {
     if (api.empresa?.obtener) {
@@ -115,6 +137,17 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
         if (res?.data) setDatosEmpresa(res.data);
       }).catch(() => {});
     }
+  }, []);
+
+  // Cerrar menú de acciones al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('[data-dropdown]')) {
+        setOpenActionMenuId(null);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
   // Notificaciones unificadas con la librería Sileo
@@ -570,58 +603,40 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
     showAlert('Producto retirado de la orden.', 'info');
   };
 
-  // Cálculos de totales económicos
+  // Métricas del requerimiento de compra
+  const totalItemsSolicitados = productosSolicitados.length;
+  const totalUnidadesSolicitadas = productosSolicitados.reduce((acc, it) => acc + (Number(it.cantidad) || 0), 0);
   const subtotalGeneral = productosSolicitados.reduce((acc, it) => acc + (it.subtotal || 0), 0);
   const igvCalculado = Math.round(subtotalGeneral * 0.18 * 100) / 100;
   const totalGeneral = Math.round((subtotalGeneral + igvCalculado) * 100) / 100;
 
-  // Validación para el botón de WhatsApp
-  const puedeEnviarPedido = Boolean(proveedorSeleccionado && productosSolicitados.length > 0 && !isSubmitting);
+  // Validación para guardar la orden de compra
+  const puedeGuardarOrden = Boolean(proveedorSeleccionado && productosSolicitados.length > 0 && !isSubmitting);
 
   // ----------------------------------------------------
-  // REALIZAR PEDIDO Y ENVIAR POR WHATSAPP
+  // GUARDAR ORDEN DE COMPRA (SIN POPUP NI ENVÍO FORZADO A WHATSAPP)
   // ----------------------------------------------------
-  const handleRealizarPedidoYEnviarWhatsApp = async () => {
-    if (!puedeEnviarPedido) return;
-
-    // Pre-abrir la ventana de WhatsApp inmediatamente en el evento de usuario para que el navegador no bloquee el popup
-    const waWindow = window.open('about:blank', '_blank');
-    if (waWindow) {
-      try {
-        waWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head><title>Conectando con WhatsApp...</title><meta charset="utf-8"></head>
-            <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f8fafc; color: #1e293b;">
-              <div style="text-align: center; padding: 28px; background: white; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 360px;">
-                <div style="width: 44px; height: 44px; border: 4px solid #10b981; border-top-color: transparent; border-radius: 50%; margin: 0 auto 16px; animation: spin 1s linear infinite;"></div>
-                <h3 style="margin: 0 0 8px; font-size: 16px; font-weight: 700;">Conectando con WhatsApp</h3>
-                <p style="margin: 0; font-size: 13px; color: #64748b;">Generando Orden de Compra y preparando el mensaje para el proveedor...</p>
-              </div>
-              <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
-            </body>
-          </html>
-        `);
-      } catch (_) {}
-    }
+  const handleGuardarOrdenCompra = async () => {
+    if (!puedeGuardarOrden) return;
 
     setIsSubmitting(true);
     try {
-      // 1. Preparar payload para el backend
+      // 1. Preparar payload para el backend con los productos solicitados
       const detallesPayload = productosSolicitados.map((item) => ({
         producto_id: item.productoId,
         unidad_medida_id: item.unidadMedidaId,
         cantidad: item.cantidad,
-        precio_unitario: item.precioUnitario,
+        precio_unitario: Number(item.precioUnitario) || 0,
       }));
 
       const payload = {
         proveedor_id: proveedorSeleccionado.ProveedorId || proveedorSeleccionado.id,
         Orden_CompraObservacion: observacion.trim() || undefined,
+        fecha_entrega_estimada: fechaEntregaEstimada || undefined,
         detalles: detallesPayload,
       };
 
-      // 2. Registrar en la base de datos
+      // 2. Registrar en la base de datos (se crea directamente como PENDIENTE_RECEPCION)
       const resCrear = await api.ordenesCompra.crear(payload);
       if (!resCrear?.success || !resCrear?.data) {
         throw new Error(resCrear?.message || 'Error al registrar la orden de compra.');
@@ -630,68 +645,28 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
       const ordenCreada = resCrear.data;
       const ordenId = ordenCreada.id || ordenCreada.Orden_CompraId;
 
-      // 3. Obtener URL de WhatsApp y registrar auditoría de envío
-      let waUrl = '';
-      let pdfUrl = api.ordenesCompra.obtenerPdfUrlDirecta(ordenId);
-
-      try {
-        const resWa = await api.ordenesCompra.enviarWhatsapp(ordenId);
-        if (resWa?.success && resWa?.data?.whatsapp_url) {
-          waUrl = resWa.data.whatsapp_url;
-          if (resWa.data.pdf_url) pdfUrl = resWa.data.pdf_url;
-        }
-      } catch (waErr) {
-        console.warn('Error al registrar auditoría de WhatsApp:', waErr);
-        try {
-          const resWaGen = await api.ordenesCompra.whatsapp(ordenId);
-          if (resWaGen?.success && resWaGen?.data?.whatsapp_url) {
-            waUrl = resWaGen.data.whatsapp_url;
-          }
-        } catch (e2) {
-          console.error('Error generando WhatsApp:', e2);
-        }
-      }
-
-      // 4. Redirigir la ventana pre-abierta al enlace de WhatsApp
-      if (waUrl) {
-        if (waWindow && !waWindow.closed) {
-          waWindow.location.href = waUrl;
-        } else {
-          window.open(waUrl, '_blank', 'noopener,noreferrer');
-        }
-      } else if (waWindow && !waWindow.closed) {
-        waWindow.close();
-      }
-
-      // 5. Descargar silenciosamente el PDF oficial (vía Blob, sin navegar la pestaña actual)
-      try {
-        await api.ordenesCompra.descargarPdf(ordenId);
-      } catch (pdfErr) {
-        console.warn('Descarga silenciosa de PDF omitida:', pdfErr);
-      }
-
-      // 6. Configurar modal de éxito y limpiar formulario
-      setModalExito({
-        ordenId: ordenId,
-        total: totalGeneral,
-        whatsappUrl: waUrl,
-        pdfUrl: pdfUrl,
-        proveedorNombre: proveedorSeleccionado.ProveedorRazonSocial || proveedorSeleccionado.razon_social,
-        proveedorTelefono: proveedorSeleccionado.ProveedorTelefono || proveedorSeleccionado.telefono,
-        ordenCompleta: ordenCreada,
+      sileo.success({
+        title: 'Orden Guardada Correctamente',
+        description: `La orden de compra ${ordenId} se registró exitosamente como Pendiente de Recepción.`,
       });
 
-      // Limpiar datos del formulario
+      // 3. Limpiar formulario de nueva orden
       setProductosSolicitados([]);
       setProveedorSeleccionado(null);
       setObservacion('');
-      showAlert(`Orden ${ordenId} registrada con éxito. Chat de WhatsApp y PDF iniciados.`, 'success');
+      setFechaEntregaEstimada('');
+
+      // 4. Cambiar a la pestaña de Historial, recargar y abrir el detalle de la orden
+      setActiveTab('historial');
+      await cargarHistorial(1);
+      handleVerDetalleOrden(ordenId);
     } catch (err) {
-      if (waWindow && !waWindow.closed) {
-        waWindow.close();
-      }
-      console.error('Error al procesar pedido:', err);
-      showAlert(err.message || 'Error al procesar la orden de compra.', 'error');
+      console.error('Error al guardar la orden de compra:', err);
+      const msg = err.response?.data?.message || err.message || 'Error al guardar la orden de compra.';
+      sileo.error({
+        title: 'Error al Guardar',
+        description: msg,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -796,344 +771,94 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
   };
 
   // ----------------------------------------------------
-  // GENERACIÓN Y COPIADO DE IMAGEN VOUCHER (PARA WHATSAPP)
+  // ELIMINACIÓN DE ORDEN DE COMPRA
   // ----------------------------------------------------
-  const drawRoundedRect = (ctx, x, y, width, height, radius) => {
-    if (ctx.roundRect) {
-      ctx.roundRect(x, y, width, height, radius);
-    } else {
-      ctx.rect(x, y, width, height);
-    }
-  };
-
-  const generarCanvasOrden = (orden) => {
-    const canvas = document.createElement('canvas');
-    const dpr = 2; // Alta resolución retina para texto nítido
-    const width = 760;
-
-    const detalles = orden.detalles || [];
-    const baseHeight = 350;
-    const rowHeight = 34;
-    const height = Math.max(520, baseHeight + (detalles.length * rowHeight));
-
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-
-    // Fondo blanco nítido
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-
-    // Contenedor tipo tarjeta con borde suave
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    drawRoundedRect(ctx, 8, 8, width - 16, height - 16, 12);
-    ctx.stroke();
-
-    // 1. Cabecera Emisor
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('COMERCIAL VALENCIA', 28, 42);
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('RUC: 20100070970  •  Tel: (01) 456-7890', 28, 59);
-
-    // Badge Orden de Compra (Derecha)
-    const ordenId = orden.id || orden.Orden_CompraId || 'OC-00000';
-    const fechaStr = orden.fecha || (orden.Orden_CompraFecha ? new Date(orden.Orden_CompraFecha).toLocaleDateString('es-PE') : new Date().toLocaleDateString('es-PE'));
-
-    ctx.fillStyle = '#eff6ff';
-    ctx.beginPath();
-    drawRoundedRect(ctx, width - 230, 24, 202, 44, 8);
-    ctx.fill();
-    ctx.strokeStyle = '#bfdbfe';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = '#1d4ed8';
-    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`ORDEN: ${ordenId}`, width - 215, 43);
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`Fecha: ${fechaStr}`, width - 215, 58);
-
-    // 2. Banner de Solicitud Formal
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    drawRoundedRect(ctx, 28, 78, width - 56, 30, 6);
-    ctx.fill();
-
-    ctx.fillStyle = '#2563eb';
-    ctx.fillRect(28, 78, 3.5, 30);
-
-    ctx.fillStyle = '#1e293b';
-    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('Solicito a usted la atención del siguiente pedido de compra:', 42, 97);
-
-    // 3. Ficha de Datos del Proveedor
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    drawRoundedRect(ctx, 28, 118, width - 56, 56, 8);
-    ctx.fill();
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.stroke();
-
-    const provRazon = orden.proveedor?.razon_social || orden.proveedor?.ProveedorRazonSocial || 'Por asignar';
-    const provRuc = orden.proveedor?.ruc || orden.proveedor?.ProveedorRuc || '-';
-    const provTel = orden.proveedor?.telefono || orden.proveedor?.ProveedorTelefono || '-';
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('PROVEEDOR:', 42, 137);
-    ctx.fillText('RUC:', 360, 137);
-    ctx.fillText('TELÉFONO:', 490, 137);
-    ctx.fillText('ESTADO:', 630, 137);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(provRazon.slice(0, 35), 42, 157);
-    ctx.fillText(provRuc, 360, 157);
-    ctx.fillStyle = '#047857';
-    ctx.fillText(`+51 ${provTel}`, 490, 157);
-
-    const estado = (orden.estado || orden.Orden_CompraEstado || 'P') === 'C' ? 'Atendida' : 'Pendiente';
-    ctx.fillStyle = estado === 'Atendida' ? '#15803d' : '#b45309';
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(estado, 630, 157);
-
-    // 4. Cabecera de la Tabla
-    let y = 186;
-    ctx.fillStyle = '#f1f5f9';
-    ctx.beginPath();
-    drawRoundedRect(ctx, 28, y, width - 56, 26, 6);
-    ctx.fill();
-
-    ctx.fillStyle = '#475569';
-    ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('PRODUCTO', 42, y + 17);
-    ctx.fillText('UNIDAD', 370, y + 17);
-    ctx.fillText('CANTIDAD', 460, y + 17);
-    ctx.fillText('P. UNIT.', 560, y + 17);
-    ctx.fillText('SUBTOTAL', 645, y + 17);
-
-    y += 26;
-    // 5. Filas de Productos
-    detalles.forEach((det, idx) => {
-      const prodNom = det.producto_nombre || det.producto?.nombre || det.producto?.ProductoNombre || det.Detalle_ProductoId || 'Producto';
-      const unAbrev = det.unidad_medida_abreviatura || det.unidad_medida?.abreviatura || det.unidadMedida?.unidades_medidaAbreviatura || 'UND';
-      const cant = Number(det.cantidad ?? det.Detalle_Orden_CompraCantidad ?? 0);
-      const pu = Number(det.precio_unitario ?? det.Detalle_Orden_CompraPrecioUnitario ?? 0);
-      const sub = Number(det.subtotal ?? det.Detalle_Orden_CompraSubtotal ?? (cant * pu));
-
-      if (idx % 2 === 1) {
-        ctx.fillStyle = '#fcfcfc';
-        ctx.fillRect(28, y, width - 56, rowHeight);
-      }
-
-      ctx.strokeStyle = '#f1f5f9';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(28, y + rowHeight);
-      ctx.lineTo(width - 28, y + rowHeight);
-      ctx.stroke();
-
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(prodNom.slice(0, 40), 42, y + 21);
-
-      ctx.fillStyle = '#475569';
-      ctx.font = '10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(unAbrev, 370, y + 21);
-
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(cant.toFixed(2), 470, y + 21);
-
-      ctx.fillStyle = '#475569';
-      ctx.font = '10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`S/ ${pu.toFixed(2)}`, 560, y + 21);
-
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`S/ ${sub.toFixed(2)}`, 645, y + 21);
-
-      y += rowHeight;
-    });
-
-    // 6. Resumen de Totales
-    y += 12;
-    const subtotal = Number(orden.subtotal || orden.Orden_CompraSubtotal || 0).toFixed(2);
-    const igv = Number(orden.igv || orden.Orden_CompraIgv || 0).toFixed(2);
-    const total = Number(orden.total || orden.Orden_CompraTotal || 0).toFixed(2);
-
-    ctx.fillStyle = '#64748b';
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('Subtotal:', 530, y + 10);
-    ctx.fillText('IGV (18%):', 530, y + 26);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`S/ ${subtotal}`, 645, y + 10);
-    ctx.fillText(`S/ ${igv}`, 645, y + 26);
-
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.beginPath();
-    ctx.moveTo(525, y + 33);
-    ctx.lineTo(width - 35, y + 33);
-    ctx.stroke();
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('TOTAL:', 530, y + 51);
-
-    ctx.fillStyle = '#2563eb';
-    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`S/ ${total}`, 645, y + 51);
-
-    // 7. Pie de Tarjeta
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('Emitido por Comercial Valencia  •  Documento Oficial de Solicitud de Compra', 28, height - 16);
-
-    return canvas;
-  };
-
-  const handleCopiarImagenOrden = (orden) => {
-    try {
-      const canvas = generarCanvasOrden(orden);
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        try {
-          if (navigator.clipboard && window.ClipboardItem) {
-            const item = new ClipboardItem({ 'image/png': blob });
-            await navigator.clipboard.write([item]);
-            showAlert('¡Imagen de la orden copiada! Pégala en WhatsApp con Ctrl + V.', 'success');
-            return;
-          }
-        } catch (clipErr) {
-          console.warn('Clipboard API no soportada o restringida, descargando archivo:', clipErr);
-        }
-        // Fallback: descarga directa del PNG
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Orden_Compra_${orden.id || orden.Orden_CompraId || 'OC'}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showAlert('Imagen descargada. Puedes arrastrarla o pegarla en WhatsApp.', 'info');
-      }, 'image/png');
-    } catch (err) {
-      console.error('Error al generar imagen:', err);
-      showAlert('No se pudo generar la imagen de la orden.', 'error');
-    }
-  };
-
-  const handleDescargarImagenOrden = (orden) => {
-    try {
-      const canvas = generarCanvasOrden(orden);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Orden_Compra_${orden.id || orden.Orden_CompraId || 'OC'}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showAlert('Imagen descargada correctamente.', 'success');
-      }, 'image/png');
-    } catch (err) {
-      console.error('Error descargando imagen:', err);
-      showAlert('No se pudo descargar la imagen.', 'error');
-    }
-  };
-
-  const handleAbrirCambiarEstado = (orden) => {
+  const handleAbrirEliminarOrden = (orden) => {
     const id = orden.id || orden.Orden_CompraId;
-    const estado = orden.estado || orden.Orden_CompraEstado;
-    setOrdenParaEstado({ ...orden, id, estado });
-    setNuevoEstadoSeleccionado(estado === 'P' ? 'C' : 'P');
-    setMotivoCambioEstado('');
-    setShowModalEstado(true);
+    setOrdenParaEliminar({ ...orden, id });
+    setShowModalEliminar(true);
+    setOpenActionMenuId(null);
   };
 
-  const handleGuardarCambioEstado = async () => {
-    if (!ordenParaEstado) return;
-    setIsUpdatingEstado(true);
+  const handleConfirmarEliminar = async () => {
+    if (!ordenParaEliminar) return;
+    setIsEliminando(true);
     try {
-      const id = ordenParaEstado.id || ordenParaEstado.Orden_CompraId;
-      const res = await api.ordenesCompra.cambiarEstado(
-        id,
-        nuevoEstadoSeleccionado,
-        motivoCambioEstado.trim() || undefined
-      );
-      if (res?.success) {
-        showAlert(res.message || 'Estado actualizado correctamente.', 'success');
-        setShowModalEstado(false);
-        setOrdenParaEstado(null);
-        cargarHistorial(paginacion.current_page);
-      }
-    } catch (err) {
-      console.error('Error al cambiar estado:', err);
-      showAlert(err.message || 'No se pudo actualizar el estado.', 'error');
-    } finally {
-      setIsUpdatingEstado(false);
-    }
-  };
-
-  const handleAbrirAnularOrden = (orden) => {
-    const id = orden.id || orden.Orden_CompraId;
-    setOrdenParaAnular({ ...orden, id });
-    setShowModalAnular(true);
-  };
-
-  const handleConfirmarAnular = async () => {
-    if (!ordenParaAnular) return;
-    setIsAnulando(true);
-    try {
-      const id = ordenParaAnular.id || ordenParaAnular.Orden_CompraId;
+      const id = ordenParaEliminar.id || ordenParaEliminar.Orden_CompraId;
       const res = await api.ordenesCompra.eliminar(id);
       if (res?.success) {
-        showAlert(`Orden ${id} anulada correctamente.`, 'info');
-        setShowModalAnular(false);
-        setOrdenParaAnular(null);
+        showAlert(res.message || `Orden ${id} eliminada correctamente.`, 'info');
+        setShowModalEliminar(false);
+        setOrdenParaEliminar(null);
         cargarHistorial(paginacion.current_page);
       }
     } catch (err) {
-      console.error('Error al anular orden:', err);
-      showAlert(err.message || 'Error al anular la orden.', 'error');
+      console.error('Error al eliminar orden:', err);
+      showAlert(err.response?.data?.message || err.message || 'Error al eliminar la orden de compra.', 'error');
     } finally {
-      setIsAnulando(false);
+      setIsEliminando(false);
+    }
+  };
+
+  const handleIniciarRecepcion = async (ordenId) => {
+    try {
+      const res = await api.ordenesCompra.iniciarRecepcion(ordenId);
+      if (res?.success) {
+        sileo.info(`Recepción iniciada para la orden ${ordenId}.`);
+        setOrdenIdParaRecepcion(ordenId);
+        setShowModalRecepcion(true);
+        cargarHistorial(paginacion.current_page);
+      }
+    } catch (err) {
+      console.error('Error al iniciar recepción:', err);
+      sileo.error(err.response?.data?.message || err.message || 'Error al iniciar recepción');
     }
   };
 
   // ----------------------------------------------------
-  // HELPER PARA BADGES DE ESTADO
+  // HELPER PARA BADGES DE ESTADO (8 ESTADOS OFICIALES + LEGACY)
   // ----------------------------------------------------
   const renderBadgeEstado = (estado) => {
     switch (estado) {
+      case 'EMITIDA':
+      case 'BORRADOR':
+      case 'ENVIADA':
+      case 'PENDIENTE_RECEPCION':
       case 'P':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <Clock className="w-3.5 h-3.5 text-amber-500" />
-            Pendiente
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <Clock className="w-3.5 h-3.5 text-blue-500" />
+            Emitida
           </span>
         );
+      case 'RECEPCION_PARCIAL':
+      case 'EN_RECEPCION':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+            En Recepción Parcial
+          </span>
+        );
+      case 'CERRADA_CONFORME':
+      case 'CERRADA':
       case 'C':
+      case 'R':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            Completada
+            Cerrada Conforme
           </span>
         );
+      case 'CERRADA_CON_FALTANTE':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+            <AlertCircle className="w-3.5 h-3.5 text-orange-500" />
+            Cerrada con Faltante
+          </span>
+        );
+      case 'ANULADA':
       case 'A':
+      case 'CANCELADA_PROVEEDOR':
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
             <XCircle className="w-3.5 h-3.5 text-rose-500" />
@@ -1167,31 +892,55 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
           </div>
         </div>
 
-        {/* BOTONES DE PESTAÑA */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70">
-          <button
-            onClick={() => setActiveTab('nueva')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'nueva'
-                ? 'bg-white text-blue-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            <span>Generar Pedido</span>
-          </button>
+        {/* BOTONES DE PESTAÑA Y ACCIÓN RÁPIDA */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70">
+            <button
+              onClick={() => setActiveTab('nueva')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'nueva'
+                  ? 'bg-white text-blue-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>Generar Pedido</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('historial')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'historial'
+                  ? 'bg-white text-blue-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>Historial de Órdenes</span>
+            </button>
+          </div>
 
           <button
-            onClick={() => setActiveTab('historial')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'historial'
-                ? 'bg-white text-blue-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-            }`}
+            type="button"
+            onClick={() => setShowModalCompraRapida(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Registrar compra directa de emergencia sin esperar pedido formal"
           >
-            <Layers className="w-4 h-4" />
-            <span>Historial de Órdenes</span>
+            <Zap className="w-3.5 h-3.5" />
+            <span>Compra Rápida</span>
           </button>
+
+          {onNavigateToRecepcion && (
+            <button
+              type="button"
+              onClick={onNavigateToRecepcion}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 active:scale-95 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Ir al módulo oficial de Recepción de Mercadería"
+            >
+              <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
+              <span>Recepción de Mercadería</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1320,7 +1069,7 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                   {productoEnSeleccion ? (
                     (productoEnSeleccion.unidades || []).map((u) => (
                       <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                        {u.descripcion} ({u.abreviatura}) - Costo: {u.precio_compra_formateado || `S/ ${u.precio_compra}`}
+                        {u.descripcion} ({u.abreviatura})
                       </option>
                     ))
                   ) : (
@@ -1384,20 +1133,10 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                     <span>Deseleccionar</span>
                   </button>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500">Costo Unit.:</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precioUnitarioInput}
-                      onChange={(e) => setPrecioUnitarioInput(e.target.value)}
-                      className="w-20 bg-white border border-blue-200 rounded-lg px-2 py-0.5 text-right font-bold text-blue-800 focus:outline-hidden"
-                    />
-                  </div>
-                  <div className="font-bold text-slate-800">
-                    Subtotal: S/ {((Number(cantidadInput) || 0) * (Number(precioUnitarioInput) || 0)).toFixed(2)}
-                  </div>
+                <div className="flex items-center gap-3 text-xs text-slate-600">
+                  <span>Marca: <strong className="text-slate-800">{productoEnSeleccion.ProductoMarca || 'Genérico'}</strong></span>
+                  <span>•</span>
+                  <span>Categoría: <strong className="text-slate-800">{productoEnSeleccion.categoria_nombre || 'General'}</strong></span>
                 </div>
               </div>
             )}
@@ -1452,14 +1191,12 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                           Producto Identificado
                         </span>
                         <div className="text-sm md:text-base font-bold text-slate-800">
-                          {item.unidadNombre} de {item.productoNombre}
+                          {item.productoNombre}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                          <span>P. Unit: S/ {Number(item.precioUnitario).toFixed(2)}</span>
+                          <span>Marca: <strong className="text-slate-700 font-semibold">{item.productoMarca || 'Genérico'}</strong></span>
                           <span>•</span>
-                          <span className="font-semibold text-slate-700">
-                            Subtotal: S/ {Number(item.subtotal).toFixed(2)}
-                          </span>
+                          <span>Presentación: <strong className="text-slate-700 font-semibold">{item.unidadNombre}</strong> ({item.unidadAbreviatura || 'UND'})</span>
                         </div>
                       </div>
                     </div>
@@ -1469,7 +1206,7 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                       <button
                         type="button"
                         onClick={() => handleAbrirEditarItem(item)}
-                        title="Editar cantidad o precio"
+                        title="Modificar cantidad a solicitar"
                         className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer"
                       >
                         <Pencil className="w-4 h-4" />
@@ -1489,31 +1226,25 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
               </div>
             )}
 
-            {/* RESUMEN ECONÓMICO */}
+            {/* RESUMEN DEL REQUERIMIENTO */}
             {productosSolicitados.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <FileCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Precios cotizados calculados en moneda nacional (PEN / Soles)</span>
+                  <span>Lista oficial de requerimiento de mercadería para emisión a proveedor.</span>
                 </div>
 
                 <div className="flex items-center gap-6 text-sm">
                   <div>
-                    <span className="text-xs text-slate-400 block">Subtotal:</span>
-                    <span className="font-semibold text-slate-700">
-                      S/ {subtotalGeneral.toFixed(2)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-400 block">IGV (18%):</span>
-                    <span className="font-semibold text-slate-700">
-                      S/ {igvCalculado.toFixed(2)}
+                    <span className="text-xs text-slate-400 block">Variedades de Producto:</span>
+                    <span className="font-bold text-slate-800">
+                      {totalItemsSolicitados} producto{totalItemsSolicitados > 1 ? 's' : ''}
                     </span>
                   </div>
                   <div className="border-l border-slate-200 pl-6">
-                    <span className="text-xs text-slate-400 block font-medium">TOTAL ESTIMADO:</span>
-                    <span className="text-lg font-extrabold text-slate-900">
-                      S/ {totalGeneral.toFixed(2)}
+                    <span className="text-xs text-slate-400 block font-medium">TOTAL UNIDADES A SOLICITAR:</span>
+                    <span className="text-lg font-extrabold text-blue-600">
+                      {totalUnidadesSolicitadas} unidades
                     </span>
                   </div>
                 </div>
@@ -1521,13 +1252,13 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
             )}
           </div>
 
-          {/* SECCIÓN 3: TARJETA "APROBAR Y ENVIAR PEDIDO" (Fiel a media_1788930189847.png & media_1788930198383.png) */}
+          {/* SECCIÓN 3: TARJETA "CONFIRMAR Y GUARDAR ORDEN DE COMPRA" */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-5">
             {/* Header de la tarjeta */}
             <div className="flex items-center gap-2 text-slate-800">
-              <FileText className="w-4 h-4 text-slate-500" />
+              <FileText className="w-4 h-4 text-blue-600" />
               <h2 className="text-sm font-bold text-slate-800">
-                Aprobar y Enviar Pedido
+                Confirmar y Guardar Orden de Compra
               </h2>
             </div>
 
@@ -1611,46 +1342,62 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                 )}
               </div>
 
-              {/* Botón WhatsApp destacado (fiel a capturas media_1788930189847.png y media_1788930198383.png) */}
+              {/* Botón Guardar Orden de Compra */}
               <div className="md:col-span-6">
                 <button
                   type="button"
-                  disabled={!puedeEnviarPedido}
-                  onClick={handleRealizarPedidoYEnviarWhatsApp}
+                  disabled={!puedeGuardarOrden}
+                  onClick={handleGuardarOrdenCompra}
                   className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all duration-200 select-none ${
-                    puedeEnviarPedido
-                      ? 'bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-white shadow-md shadow-emerald-500/20 cursor-pointer'
+                    puedeGuardarOrden
+                      ? 'bg-blue-600 hover:bg-blue-700 active:scale-98 text-white shadow-md shadow-blue-600/20 cursor-pointer'
                       : 'bg-slate-200/90 text-slate-400 cursor-not-allowed shadow-none'
                   }`}
                 >
                   {isSubmitting ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Generando Pedido y PDF...</span>
+                      <span>Guardando Orden de Compra...</span>
                     </>
                   ) : (
                     <>
-                      <Send className="w-4 h-4 shrink-0" />
-                      <span>Realizar Pedido y Enviar PDF por WhatsApp</span>
+                      <CheckCircle2 className="w-5 h-5 shrink-0" />
+                      <span>Guardar Orden de Compra</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Campo opcional de observación */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                Observaciones o notas adicionales para el proveedor (opcional):
-              </label>
-              <input
-                type="text"
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                placeholder="Ej. Despachar a primera hora en almacén central..."
-                maxLength={250}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-700 focus:outline-hidden focus:border-blue-500 focus:bg-white transition"
-              />
+            {/* Campos de Fecha Estimada de Llegada y Observación */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              <div className="md:col-span-4">
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Fecha Estimada de Llegada (Lead Time):</span>
+                </label>
+                <input
+                  type="date"
+                  value={fechaEntregaEstimada}
+                  onChange={(e) => setFechaEntregaEstimada(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-700 font-medium focus:outline-hidden focus:border-blue-500 focus:bg-white transition cursor-pointer"
+                />
+              </div>
+
+              <div className="md:col-span-8">
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  Observaciones o notas adicionales para el proveedor (opcional):
+                </label>
+                <input
+                  type="text"
+                  value={observacion}
+                  onChange={(e) => setObservacion(e.target.value)}
+                  placeholder="Ej. Despachar a primera hora en almacén central..."
+                  maxLength={250}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-700 focus:outline-hidden focus:border-blue-500 focus:bg-white transition"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1684,9 +1431,11 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                 className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-hidden focus:border-blue-500 transition cursor-pointer"
               >
                 <option value="">Todos los Estados</option>
-                <option value="P">Pendientes (P)</option>
-                <option value="C">Completadas (C)</option>
-                <option value="A">Anuladas (A)</option>
+                <option value="EMITIDA">Emitida</option>
+                <option value="RECEPCION_PARCIAL">En Recepción Parcial</option>
+                <option value="CERRADA_CONFORME">Cerrada Conforme</option>
+                <option value="CERRADA_CON_FALTANTE">Cerrada con Faltante</option>
+                <option value="ANULADA">Anulada</option>
               </select>
 
               {/* Fechas desde / hasta */}
@@ -1730,41 +1479,55 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
               )}
             </div>
 
-            <button
-              onClick={() => cargarHistorial(paginacion.current_page)}
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              title="Recargar listado"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoadingHistorial ? 'animate-spin' : ''}`} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowModalCompraRapida(true)}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Registrar compra directa inmediata de emergencia a comercio aliado"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>⚡ Compra Rápida</span>
+              </button>
+
+              <button
+                onClick={() => cargarHistorial(paginacion.current_page)}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                title="Recargar listado"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoadingHistorial ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
           </div>
 
           {/* TABLA DE ÓRDENES */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
+            <div className="overflow-x-auto min-h-[380px]">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    <th className="py-3.5 px-4">Código</th>
-                    <th className="py-3.5 px-4">Fecha Emisión</th>
-                    <th className="py-3.5 px-4">Proveedor</th>
-                    <th className="py-3.5 px-4 text-center">Ítems</th>
-                    <th className="py-3.5 px-4 text-right">Total (PEN)</th>
-                    <th className="py-3.5 px-4 text-center">Estado</th>
-                    <th className="py-3.5 px-4 text-center">Acciones</th>
+                    <th className="py-3.5 px-3">Código</th>
+                    <th className="py-3.5 px-3">Fecha Emisión</th>
+                    <th className="py-3.5 px-2.5">F. Estimada</th>
+                    <th className="py-3.5 px-2.5">F. Recepción</th>
+                    <th className="py-3.5 px-3">Proveedor</th>
+                    <th className="py-3.5 px-2 text-center">Ítems</th>
+                    <th className="py-3.5 px-3 text-right">Total (PEN)</th>
+                    <th className="py-3.5 px-3 text-center">Estado</th>
+                    <th className="py-3.5 px-3 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {isLoadingHistorial ? (
                     <tr>
-                      <td colSpan="7" className="py-12 text-center text-slate-400">
+                      <td colSpan="9" className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
                         <span>Cargando órdenes de compra...</span>
                       </td>
                     </tr>
                   ) : ordenesHistorial.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="py-12 text-center text-slate-400">
+                      <td colSpan="9" className="py-12 text-center text-slate-400">
                         No se registraron órdenes de compra con los filtros especificados.
                       </td>
                     </tr>
@@ -1772,21 +1535,33 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                     ordenesHistorial.map((oc) => {
                       const ocId = oc.id || oc.Orden_CompraId;
                       const ocFecha = oc.fecha_formateada || oc.Orden_CompraFecha_Formateada || oc.fecha || '-';
+                      const ocFechaEstimada = oc.fecha_entrega_estimada || '-';
+                      const ocFechaReal = oc.fecha_recepcion_real ? new Date(oc.fecha_recepcion_real).toLocaleDateString('es-PE') : '-';
                       const provNombre = oc.proveedor?.razon_social || oc.proveedor?.ProveedorRazonSocial || 'Sin Proveedor';
                       const provTel = oc.proveedor?.telefono || oc.proveedor?.ProveedorTelefono;
                       const ocItems = oc.total_items ?? (oc.detalles ? oc.detalles.length : 0);
                       const ocTotal = Number(oc.total || oc.Orden_CompraTotal || 0);
                       const ocEstado = oc.estado || oc.Orden_CompraEstado;
 
+                      const puedeIniciarRecepcion = ocEstado === 'PENDIENTE_RECEPCION' || ocEstado === 'ENVIADA' || ocEstado === 'P' || ocEstado === 'BORRADOR';
+                      const puedeContinuarRecepcion = ocEstado === 'EN_RECEPCION';
+                      const puedeAnularRecepcion = ocEstado === 'CERRADA' || ocEstado === 'CERRADA_CON_FALTANTE' || ocEstado === 'EN_RECEPCION' || ocEstado === 'C';
+
                       return (
                         <tr key={ocId} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="py-3.5 px-4 font-bold text-blue-600">
+                          <td className="py-3.5 px-3 font-bold text-blue-600">
                             {ocId}
                           </td>
-                          <td className="py-3.5 px-4 text-slate-600 font-medium">
+                          <td className="py-3.5 px-3 text-slate-600 font-medium">
                             {ocFecha}
                           </td>
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-2.5 text-slate-500 font-medium">
+                            {ocFechaEstimada}
+                          </td>
+                          <td className="py-3.5 px-2.5 text-slate-500 font-medium">
+                            {ocFechaReal}
+                          </td>
+                          <td className="py-3.5 px-3">
                             <div className="font-bold text-slate-800">
                               {provNombre}
                             </div>
@@ -1794,71 +1569,140 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                               {provTel ? `+51 ${provTel}` : 'Sin teléfono'}
                             </div>
                           </td>
-                          <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                          <td className="py-3.5 px-2 text-center font-semibold text-slate-700">
                             {ocItems}
                           </td>
-                          <td className="py-3.5 px-4 text-right font-extrabold text-slate-800">
+                          <td className="py-3.5 px-3 text-right font-extrabold text-slate-800">
                             S/ {ocTotal.toFixed(2)}
                           </td>
-                          <td className="py-3.5 px-4 text-center">
+                          <td className="py-3.5 px-3 text-center">
                             {renderBadgeEstado(ocEstado)}
                           </td>
-                          <td className="py-3.5 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {/* Ver Detalle */}
+                          <td className="py-3.5 px-3 text-center">
+                            <div className="relative inline-block text-left" data-dropdown>
                               <button
-                                onClick={() => handleVerDetalleOrden(ocId)}
-                                title="Ver Detalle de la Orden"
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenActionMenuId(openActionMenuId === ocId ? null : ocId);
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Acciones"
                               >
-                                <Eye className="w-4 h-4" />
+                                <MoreVertical className="w-4 h-4" />
                               </button>
 
-                              {/* Descargar PDF */}
-                              <button
-                                onClick={() => handleDescargarPdf(ocId)}
-                                title="Ver / Descargar PDF Oficial"
-                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                              >
-                                <Download className="w-4 h-4" />
-                              </button>
+                              {openActionMenuId === ocId && (
+                                <div className="absolute right-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-200/90 py-1.5 z-40 animate-in fade-in duration-100 text-left">
+                                  <button
+                                    onClick={() => {
+                                      handleVerDetalleOrden(ocId);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Ver orden</span>
+                                  </button>
 
-                              {/* Imprimir Formato Físico Oficial */}
-                              <button
-                                onClick={() => handleAbrirImpresionOficial(oc)}
-                                title="Imprimir Formato Físico Oficial de Orden de Compra"
-                                className="p-1.5 text-slate-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
+                                  <button
+                                    onClick={() => {
+                                      handleAbrirImpresionOficial(oc);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                                  >
+                                    <Printer className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Imprimir documento</span>
+                                  </button>
 
-                              {/* Reenviar WhatsApp */}
-                              <button
-                                onClick={() => handleReenviarWhatsApp(ocId)}
-                                title="Reenviar por WhatsApp al Proveedor"
-                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
-                              >
-                                <Send className="w-4 h-4" />
-                              </button>
+                                  <button
+                                    onClick={() => {
+                                      handleDescargarPdf(ocId);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                                  >
+                                    <Download className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Descargar PDF</span>
+                                  </button>
 
-                              {/* Cambiar Estado */}
-                              <button
-                                onClick={() => handleAbrirCambiarEstado(oc)}
-                                title="Cambiar Estado de la Orden"
-                                className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition cursor-pointer"
-                              >
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
+                                  <button
+                                    onClick={() => {
+                                      handleReenviarWhatsApp(ocId);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>Enviar por WhatsApp</span>
+                                  </button>
 
-                              {/* Anular si está pendiente */}
-                              {ocEstado === 'P' && (
-                                <button
-                                  onClick={() => handleAbrirAnularOrden(oc)}
-                                  title="Anular Orden de Compra"
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                  <button
+                                    onClick={() => {
+                                      setOrdenIdParaHistorial(ocId);
+                                      setShowModalHistorialRecepcion(true);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                                  >
+                                    <History className="w-3.5 h-3.5 text-purple-500" />
+                                    <span>Auditoría / Kárdex</span>
+                                  </button>
+
+                                  {puedeIniciarRecepcion && (
+                                    <button
+                                      onClick={() => {
+                                        handleIniciarRecepcion(ocId);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                                    >
+                                      <PackageCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Iniciar recepción</span>
+                                    </button>
+                                  )}
+
+                                  {puedeContinuarRecepcion && (
+                                    <button
+                                      onClick={() => {
+                                        setOrdenIdParaRecepcion(ocId);
+                                        setShowModalRecepcion(true);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                                    >
+                                      <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
+                                      <span>Continuar recepción</span>
+                                    </button>
+                                  )}
+
+                                  {puedeAnularRecepcion && (
+                                    <button
+                                      onClick={() => {
+                                        setOrdenIdParaAnularRecepcion(ocId);
+                                        setShowModalAnularRecepcion(true);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 cursor-pointer"
+                                    >
+                                      <AlertOctagon className="w-3.5 h-3.5 text-rose-500" />
+                                      <span>Anular recepción</span>
+                                    </button>
+                                  )}
+
+                                  <div className="my-1 border-t border-slate-100" />
+
+                                  <button
+                                    onClick={() => {
+                                      handleAbrirEliminarOrden(oc);
+                                      setOpenActionMenuId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                    <span>Eliminar orden</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -1969,17 +1813,6 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                 <span>Imprimir Formato Físico Oficial</span>
               </button>
 
-              {modalExito.ordenCompleta && (
-                <button
-                  type="button"
-                  onClick={() => handleCopiarImagenOrden(modalExito.ordenCompleta)}
-                  className="w-full py-2.5 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer active:scale-98"
-                  title="Copiar imagen al portapapeles para pegar en WhatsApp"
-                >
-                  <Camera className="w-4 h-4 text-blue-600" />
-                  <span>Copiar Imagen para WhatsApp (Ctrl + V)</span>
-                </button>
-              )}
 
               {modalExito.whatsappUrl && (
                 <button
@@ -2038,7 +1871,7 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Cantidad:
+                  Cantidad a Solicitar:
                 </label>
                 <input
                   type="number"
@@ -2052,32 +1885,26 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Precio Unitario (PEN):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={itemEnEdicion.nuevoPrecio}
-                  onChange={(e) =>
-                    setItemEnEdicion({ ...itemEnEdicion, nuevoPrecio: e.target.value })
-                  }
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-blue-500"
-                />
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-xl text-xs flex justify-between items-center font-bold">
-                <span className="text-slate-500">Nuevo Subtotal:</span>
-                <span className="text-slate-900">
-                  S/{' '}
-                  {(
-                    (Number(itemEnEdicion.nuevaCantidad) || 0) *
-                    (Number(itemEnEdicion.nuevoPrecio) || 0)
-                  ).toFixed(2)}
-                </span>
-              </div>
+              {itemEnEdicion.unidadesDisponibles && itemEnEdicion.unidadesDisponibles.length > 1 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Presentación / Unidad:
+                  </label>
+                  <select
+                    value={itemEnEdicion.nuevaUnidadId}
+                    onChange={(e) =>
+                      setItemEnEdicion({ ...itemEnEdicion, nuevaUnidadId: e.target.value })
+                    }
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-hidden focus:border-blue-500"
+                  >
+                    {itemEnEdicion.unidadesDisponibles.map((u) => (
+                      <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
+                        {u.descripcion} ({u.abreviatura})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -2167,42 +1994,54 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                   </span>
                 </div>
 
-                {/* Tabla de ítems */}
+                {/* Tabla de requerimiento de productos */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
-                        <th className="py-2.5 px-3">Producto</th>
-                        <th className="py-2.5 px-3 text-center">Unidad</th>
-                        <th className="py-2.5 px-3 text-center">Cantidad</th>
-                        <th className="py-2.5 px-3 text-right">P. Unitario</th>
-                        <th className="py-2.5 px-3 text-right">Subtotal</th>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3 text-center w-12">#</th>
+                        <th className="py-2.5 px-3">Producto Solicitado</th>
+                        <th className="py-2.5 px-3">Marca</th>
+                        <th className="py-2.5 px-3 text-center">Presentación</th>
+                        <th className="py-2.5 px-3 text-center">Cant. Solicitada</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(ordenDetalle.detalles || []).map((det, idx) => {
                         const prodNom = det.producto_nombre || det.producto?.nombre || det.producto?.ProductoNombre || det.Detalle_ProductoId;
-                        const unAbrev = det.unidad_medida_abreviatura || det.unidad_medida?.abreviatura || det.unidadMedida?.unidades_medidaAbreviatura || 'UND';
+                        const marca = det.producto_marca || det.producto?.marca || det.producto?.ProductoMarca || 'Genérico';
+                        const factor = Number(det.factor_conversion || 1);
+                        const unAbrev = det.unidad_medida_abreviatura || det.unidad_abreviatura || det.unidad_nombre || det.unidadMedida?.unidades_medidaAbreviatura || 'UND';
                         const cant = Number(det.cantidad ?? det.Detalle_Orden_CompraCantidad ?? 0);
-                        const pu = Number(det.precio_unitario ?? det.Detalle_Orden_CompraPrecioUnitario ?? 0);
-                        const sub = Number(det.subtotal ?? det.Detalle_Orden_CompraSubtotal ?? (cant * pu));
 
                         return (
                           <tr key={idx} className="hover:bg-slate-50/50">
-                            <td className="py-2.5 px-3 font-semibold text-slate-800">
+                            <td className="py-2.5 px-3 text-center text-slate-400 font-semibold">
+                              {idx + 1}
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-800">
                               {prodNom}
                             </td>
-                            <td className="py-2.5 px-3 text-center text-slate-600">
-                              {unAbrev}
+                            <td className="py-2.5 px-3 text-slate-600 font-medium">
+                              {marca}
                             </td>
-                            <td className="py-2.5 px-3 text-center font-bold text-slate-800">
-                              {cant.toFixed(2)}
+                            <td className="py-2.5 px-3 text-center text-slate-700">
+                              <span className="px-2 py-0.5 bg-slate-100 rounded-md border border-slate-200 font-semibold text-slate-800">
+                                {unAbrev}
+                              </span>
+                              {factor > 1 && (
+                                <div className="text-[10px] text-blue-600 font-medium mt-0.5">
+                                  x {factor} unidades
+                                </div>
+                              )}
                             </td>
-                            <td className="py-2.5 px-3 text-right text-slate-600">
-                              S/ {pu.toFixed(2)}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                              S/ {sub.toFixed(2)}
+                            <td className="py-2.5 px-3 text-center font-extrabold text-blue-600">
+                              <div>{cant}</div>
+                              {factor > 1 && (
+                                <div className="text-[10px] font-normal text-slate-400">
+                                  ({cant * factor} unid. físicas)
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -2211,7 +2050,7 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                   </table>
                 </div>
 
-                {/* Resumen económico */}
+                {/* Resumen del requerimiento */}
                 <div className="bg-slate-50 p-4 rounded-xl flex justify-between items-center text-xs">
                   <div className="text-slate-500 max-w-sm">
                     {(ordenDetalle.observacion || ordenDetalle.Orden_CompraObservacion) && (
@@ -2222,45 +2061,38 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
                   </div>
                   <div className="text-right space-y-1">
                     <div>
-                      <span className="text-slate-400 mr-2">Subtotal:</span>
+                      <span className="text-slate-400 mr-2">Total Productos:</span>
                       <span className="font-semibold text-slate-700">
-                        S/ {Number(ordenDetalle.subtotal || ordenDetalle.Orden_CompraSubtotal || 0).toFixed(2)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 mr-2">IGV (18%):</span>
-                      <span className="font-semibold text-slate-700">
-                        S/ {Number(ordenDetalle.igv || ordenDetalle.Orden_CompraIgv || 0).toFixed(2)}
+                        {ordenDetalle.detalles?.length || 0} variedad(es)
                       </span>
                     </div>
                     <div className="text-sm font-extrabold text-slate-900 border-t border-slate-200 pt-1">
-                      <span className="mr-2">TOTAL:</span>
-                      <span>S/ {Number(ordenDetalle.total || ordenDetalle.Orden_CompraTotal || 0).toFixed(2)}</span>
+                      <span className="mr-2">TOTAL UNIDADES:</span>
+                      <span className="text-blue-600">
+                        {(ordenDetalle.detalles || []).reduce((acc, d) => acc + Number(d.cantidad ?? d.Detalle_Orden_CompraCantidad ?? 0), 0)} unidades
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Botones de acción modal */}
                 <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleCopiarImagenOrden(ordenDetalle)}
-                    className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
-                    title="Copiar imagen al portapapeles para pegar en WhatsApp (Ctrl + V)"
-                  >
-                    <Camera className="w-4 h-4 text-blue-600" />
-                    <span>Copiar Imagen (WhatsApp)</span>
-                  </button>
+                  {/* Iniciar Recepción directa si la orden está pendiente */}
+                  {(['PENDIENTE_RECEPCION', 'BORRADOR', 'P', 'ENVIADA'].includes(ordenDetalle.estado || ordenDetalle.Orden_CompraEstado)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowModalDetalle(false);
+                        handleIniciarRecepcion(ordenDetalle.id || ordenDetalle.Orden_CompraId);
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                      title="Ingresar productos recibidos a stock físico"
+                    >
+                      <PackageCheck className="w-4 h-4" />
+                      <span>Iniciar Recepción</span>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleDescargarImagenOrden(ordenDetalle)}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                    title="Descargar imagen PNG de la orden"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Descargar Imagen</span>
-                  </button>
 
                   <button
                     type="button"
@@ -2300,116 +2132,42 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 4: CAMBIAR ESTADO DE ORDEN                                          */}
+      {/* MODAL: ELIMINAR ORDEN DE COMPRA                                           */}
       {/* ========================================================================= */}
-      {showModalEstado && ordenParaEstado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 text-amber-600" />
-                <h3 className="text-sm font-bold text-slate-800">
-                  Cambiar Estado de la Orden
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowModalEstado(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-600">
-              Orden: <strong className="text-slate-800">{ordenParaEstado.id || ordenParaEstado.Orden_CompraId}</strong>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Nuevo Estado:
-                </label>
-                <select
-                  value={nuevoEstadoSeleccionado}
-                  onChange={(e) => setNuevoEstadoSeleccionado(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="P">Pendiente (P)</option>
-                  <option value="C">Completada / Atendida (C)</option>
-                  <option value="A">Anulada (A)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Motivo o comentario (opcional):
-                </label>
-                <input
-                  type="text"
-                  value={motivoCambioEstado}
-                  onChange={(e) => setMotivoCambioEstado(e.target.value)}
-                  placeholder="Ej. Mercadería recibida conforme..."
-                  maxLength={250}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-hidden focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowModalEstado(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isUpdatingEstado}
-                onClick={handleGuardarCambioEstado}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
-              >
-                {isUpdatingEstado ? 'Actualizando...' : 'Confirmar Estado'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL 5: CONFIRMAR ANULACIÓN                                              */}
-      {/* ========================================================================= */}
-      {showModalAnular && ordenParaAnular && (
+      {showModalEliminar && ordenParaEliminar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white w-full max-w-sm rounded-2xl border border-slate-200 shadow-2xl p-6 text-center space-y-4">
             <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl border border-rose-100 flex items-center justify-center mx-auto">
-              <AlertCircle className="w-6 h-6" />
+              <Trash2 className="w-6 h-6" />
             </div>
 
             <div>
               <h3 className="text-base font-bold text-slate-800">
-                ¿Anular Orden {ordenParaAnular.id || ordenParaAnular.Orden_CompraId}?
+                ¿Eliminar Orden {ordenParaEliminar.id || ordenParaEliminar.Orden_CompraId}?
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                La orden de compra pasará a estado Anulada y quedará sin efecto administrativo.
+                La orden de compra será eliminada del sistema. Esta acción solo se permite si la orden no registra mercadería ingresada a stock.
               </p>
             </div>
 
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setShowModalAnular(false)}
+                onClick={() => {
+                  setShowModalEliminar(false);
+                  setOrdenParaEliminar(null);
+                }}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
               >
                 No, cancelar
               </button>
               <button
                 type="button"
-                disabled={isAnulando}
-                onClick={handleConfirmarAnular}
+                disabled={isEliminando}
+                onClick={handleConfirmarEliminar}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
               >
-                {isAnulando ? 'Anulando...' : 'Sí, anular orden'}
+                {isEliminando ? 'Eliminando...' : 'Sí, eliminar orden'}
               </button>
             </div>
           </div>
@@ -2462,6 +2220,67 @@ export default function GestionOrdenesCompra({ aiPrefill = null, onClearAiPrefil
             nombre: datosEmpresa?.EmpresaRazonSocial || datosEmpresa?.EmpresaNombreComercial || 'COMERCIAL VALENCIA',
             ruc: datosEmpresa?.EmpresaRuc || '10181935451',
             logo: datosEmpresa?.EmpresaLogo || null,
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: RECEPCIÓN OFICIAL DE MERCADERÍA                                  */}
+      {/* ========================================================================= */}
+      {showModalRecepcion && ordenIdParaRecepcion && (
+        <ModalRecepcionMercaderia
+          isOpen={showModalRecepcion}
+          onClose={() => {
+            setShowModalRecepcion(false);
+            setOrdenIdParaRecepcion(null);
+          }}
+          ordenId={ordenIdParaRecepcion}
+          onRecepcionFinalizada={() => {
+            cargarHistorial(paginacion.current_page);
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: ANULACIÓN DE RECEPCIÓN CON CONTRA-MOVIMIENTO                     */}
+      {/* ========================================================================= */}
+      {showModalAnularRecepcion && ordenIdParaAnularRecepcion && (
+        <ModalAnularRecepcion
+          isOpen={showModalAnularRecepcion}
+          onClose={() => {
+            setShowModalAnularRecepcion(false);
+            setOrdenIdParaAnularRecepcion(null);
+          }}
+          ordenId={ordenIdParaAnularRecepcion}
+          onAnulacionExitosa={() => {
+            cargarHistorial(paginacion.current_page);
+          }}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 9: AUDITORÍA E HISTORIAL DE RECEPCIÓN Y KARDEX                     */}
+      {/* ========================================================================= */}
+      {showModalHistorialRecepcion && ordenIdParaHistorial && (
+        <ModalHistorialRecepcion
+          isOpen={showModalHistorialRecepcion}
+          onClose={() => {
+            setShowModalHistorialRecepcion(false);
+            setOrdenIdParaHistorial(null);
+          }}
+          ordenId={ordenIdParaHistorial}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 10: COMPRA RÁPIDA A COMERCIO ALIADO (PYME VECINA)                   */}
+      {/* ========================================================================= */}
+      {showModalCompraRapida && (
+        <ModalCompraRapida
+          isOpen={showModalCompraRapida}
+          onClose={() => setShowModalCompraRapida(false)}
+          onCompraExitosa={() => {
+            cargarHistorial(1);
           }}
         />
       )}

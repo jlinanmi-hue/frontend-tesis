@@ -34,7 +34,7 @@ import { GestionRoles, GestionCargos } from './seguridad';
 import { GestionProductos, GestionMovimientos, GestionAjustesInventario } from './inventario';
 import { GestionClientes } from './clientes';
 import { GestionProveedores } from './proveedores';
-import { GestionOrdenesCompra, GestionOrdenesCliente } from './ordenes';
+import { GestionOrdenesCompra, GestionOrdenesCliente, GestionRecepcionMercaderia } from './ordenes';
 import PrediccionesCompra from './ordenes/PrediccionesCompra';
 import GestionEmpresa from './empresa/GestionEmpresa';
 import MiCuenta from './cuenta/MiCuenta';
@@ -462,6 +462,23 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                     <button
                       onClick={() => {
                         setActiveMenu('ordenes');
+                        setActiveSubMenu('ordenes_recepcion');
+                      }}
+                      className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
+                        activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion'
+                          ? 'bg-slate-800/90 text-blue-400 font-medium'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion' ? 'bg-blue-400' : 'bg-slate-600'
+                      }`} />
+                      <span className="truncate">Recepción de Mercadería</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveMenu('ordenes');
                         setActiveSubMenu('ordenes_predicciones');
                       }}
                       className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
@@ -781,7 +798,13 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 setActiveSubMenu('ordenes_predicciones');
                 setOpenDropdowns(prev => ({ ...prev, ordenes: true }));
               }}
+              onNavigateToRecepcion={() => {
+                setActiveSubMenu('ordenes_recepcion');
+                setOpenDropdowns(prev => ({ ...prev, ordenes: true }));
+              }}
             />
+          ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion' ? (
+            <GestionRecepcionMercaderia />
           ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_predicciones' ? (
             <PrediccionesCompra
               onNavigateToOrdenCompra={(prefill) => {

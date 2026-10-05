@@ -157,6 +157,16 @@ export const api = {
       request(`/inventario/movimientos/producto/${productoId}`),
     movimientoDetalle: (id) =>
       request(`/inventario/movimientos/${id}`),
+    ajusteManual: (datos) =>
+      request('/inventario/movimientos/ajuste-manual', {
+        method: 'POST',
+        body: datos,
+      }),
+    crearProductoExpress: (datos) =>
+      request('/inventario/productos/express', {
+        method: 'POST',
+        body: datos,
+      }),
     ubicaciones: () => request('/inventario/ubicaciones'),
     subirImagen: (id, file) => {
       const formData = new FormData();
@@ -271,6 +281,14 @@ export const api = {
       }),
     consultarSunat: (ruc) =>
       request(`/sunat/ruc/${ruc}?target=proveedor`),
+    cumplimiento: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request(`/proveedores/cumplimiento${q ? `?${q}` : ''}`);
+    },
+    rankingCumplimiento: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request(`/proveedores/ranking-cumplimiento${q ? `?${q}` : ''}`);
+    },
   },
 
   // 5. MÓDULO DE CLIENTES
@@ -611,6 +629,41 @@ export const api = {
         method: 'PATCH',
         body: { estado, motivo },
       }),
+    iniciarRecepcion: (id) =>
+      request(`/ordenes-compra/${id}/iniciar-recepcion`, {
+        method: 'POST',
+      }),
+    recepcionarItem: (id, datos) =>
+      request(`/ordenes-compra/${id}/recepcionar-item`, {
+        method: 'POST',
+        body: datos,
+      }),
+    rechazarItem: (id, datos) =>
+      request(`/ordenes-compra/${id}/rechazar-item`, {
+        method: 'POST',
+        body: datos,
+      }),
+    cerrarRecepcion: (id, datos = {}) =>
+      request(`/ordenes-compra/${id}/cerrar-recepcion`, {
+        method: 'POST',
+        body: datos,
+      }),
+    anularRecepcion: (id, datos = {}) =>
+      request(`/ordenes-compra/${id}/anular-recepcion`, {
+        method: 'POST',
+        body: datos,
+      }),
+    compraRapida: (datos) =>
+      request('/ordenes-compra/compra-rapida', {
+        method: 'POST',
+        body: datos,
+      }),
+    historialRecepcion: (id) =>
+      request(`/ordenes-compra/${id}/historial-recepcion`),
+    generarNuevaOcFaltantes: (id) =>
+      request(`/ordenes-compra/${id}/generar-oc-faltantes`, {
+        method: 'POST',
+      }),
     whatsapp: (id) => request(`/ordenes-compra/${id}/whatsapp`),
     mensajeWhatsapp: (id) => request(`/ordenes-compra/${id}/mensaje-whatsapp`),
     enviarWhatsapp: (id) =>
@@ -642,6 +695,34 @@ export const api = {
       document.body.removeChild(a);
       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
     },
+  },
+
+  // 10.B MÓDULO DE AUDITORÍA Y CONTROL DE ROTURAS DE STOCK (INDICADOR PRS)
+  roturasStock: {
+    listar: (params = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+      );
+      const query = new URLSearchParams(cleanParams).toString();
+      return request(`/roturas-stock${query ? `?${query}` : ''}`);
+    },
+    resumen: (params = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+      );
+      const query = new URLSearchParams(cleanParams).toString();
+      return request(`/roturas-stock/resumen${query ? `?${query}` : ''}`);
+    },
+    intento: (datos) =>
+      request('/roturas-stock/intento', {
+        method: 'POST',
+        body: datos,
+      }),
+    confirmar: (datos) =>
+      request('/roturas-stock/confirmar', {
+        method: 'POST',
+        body: datos,
+      }),
   },
 
   // 11. MÓDULO DE ÓRDENES DE CLIENTE (PEDIDOS DE VENTA)
@@ -876,6 +957,13 @@ export const api = {
     detail: (id, params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/dashboard/indicator/${id}${qs ? `?${qs}` : ''}`);
+    },
+    compare: (params = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/compare${qs ? `?${qs}` : ''}`);
     },
     indicadores: (params = {}) => {
       const qs = new URLSearchParams(params).toString();

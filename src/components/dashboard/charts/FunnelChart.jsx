@@ -1,6 +1,6 @@
 import SafeApexChart from './SafeApexChart';
 
-export default function FunnelChart({ data = [] }) {
+export default function FunnelChart({ data = [], xAxisMax = undefined }) {
   const categories = data.map(d => d.etapa_nombre || d.etapa || '');
   const values = data.map(d => Number(d.valor) || 0);
 
@@ -35,6 +35,7 @@ export default function FunnelChart({ data = [] }) {
     xaxis: {
       categories: categories,
       labels: { show: false },
+      ...(xAxisMax !== undefined && xAxisMax !== null ? { max: xAxisMax } : {}),
     },
     legend: { show: false },
     tooltip: {

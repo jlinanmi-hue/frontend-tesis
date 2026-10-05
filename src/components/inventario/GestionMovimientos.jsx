@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Scale,
   Printer,
+  Sliders,
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
@@ -66,6 +67,7 @@ export default function GestionMovimientos() {
   // Filtros de la Tabla
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroTipo, setFiltroTipo] = useState(''); // '' | 'E' | 'S'
+  const [filtroSubtipo, setFiltroSubtipo] = useState(''); // '' | 'RECEPCION_OC' | 'ANULACION_RECEPCION' | ...
   const [filtroDias, setFiltroDias] = useState(''); // '' | '1' | '7' | '15' | '30'
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -186,6 +188,9 @@ export default function GestionMovimientos() {
       if (filtroDias) {
         params.dias = filtroDias;
       }
+      if (filtroSubtipo) {
+        params.subtipo = filtroSubtipo;
+      }
 
       const res = await api.inventario.movimientos(params);
       if (res?.success && res?.data) {
@@ -233,7 +238,7 @@ export default function GestionMovimientos() {
 
   useEffect(() => {
     cargarMovimientos(currentPage);
-  }, [currentPage, filtroTipo, filtroDias]);
+  }, [currentPage, filtroTipo, filtroDias, filtroSubtipo]);
 
   // Manejador de búsqueda con debounce
   useEffect(() => {
@@ -243,6 +248,143 @@ export default function GestionMovimientos() {
     }, 350);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Helpers para Formato Oficial de Movimientos
+  const resolverHeaderType = (mov) => {
+    if (!mov) return 'ORDEN DE MOVIMIENTO DE STOCK';
+    const subtipo = (mov.subtipo || mov.Movimiento_productoSubtipo || '').toUpperCase();
+    const doc = (mov.documento_referencia || mov.Movimiento_productoDocumentoOperacionId || '').toUpperCase();
+    const esSalida = (
+      mov.Movimiento_productoTipoMovimiento === 'S' ||
+      mov.Movimiento_productoTipo_Movimiento === 'S' ||
+      mov.tipo_movimiento === 'S' ||
+      mov.tipo === 'S'
+    );
+
+    if (subtipo === 'ANULACION_RECEPCION' || doc.startsWith('ANUL-')) {
+      return 'ORDEN DE ANULACIÓN DE COMPRA';
+    }
+    if (subtipo === 'DEVOLUCION_CLIENTE' || doc.startsWith('DEV-PED-') || doc.startsWith('DEV-')) {
+      return 'ORDEN DE REINGRESO DE STOCK';
+    }
+    if (subtipo === 'AJUSTE_MANUAL' || doc.startsWith('AJU-') || doc.startsWith('AJUSTE-')) {
+      return esSalida ? 'ORDEN DE AJUSTE DE INVENTARIO (SALIDA)' : 'ORDEN DE AJUSTE DE INVENTARIO (INGRESO)';
+    }
+    if (subtipo === 'VENTA_PEDIDO' || subtipo === 'VENTA' || doc.startsWith('PED-')) {
+      return 'ORDEN DE DESPACHO DE STOCK';
+    }
+    if (subtipo === 'RECEPCION_OC' || subtipo === 'COMPRA_RAPIDA' || doc.startsWith('OC-') || doc.startsWith('CR-')) {
+      return 'ORDEN DE INGRESO DE STOCK';
+    }
+    return esSalida ? 'ORDEN DE EGRESO DE STOCK' : 'ORDEN DE INGRESO DE STOCK';
+  };
+
+  const resolverEntidadMovimiento = (mov) => {
+    if (!mov) {
+      return {
+        nombre: 'ALMACÉN PRINCIPAL - COMERCIAL VALENCIA',
+        ruc: datosEmpresa?.EmpresaRuc || '10181935451',
+        direccion: datosEmpresa?.EmpresaDireccion || 'Av. Principal 123 - Lima, Perú',
+      };
+    }
+
+    if (mov.proveedor) {
+      return {
+        nombre: mov.proveedor.razon_social || mov.proveedor.ProveedorRazonSocial || 'PROVEEDOR',
+        ruc: mov.proveedor.ruc || mov.proveedor.ProveedorRuc || '---',
+        direccion: mov.proveedor.direccion || mov.proveedor.ProveedorDireccion || '---',
+        responsable: mov.usuario_creacion || undefined,
+      };
+    }
+
+    if (mov.cliente) {
+      return {
+        nombre: mov.cliente.nombre || mov.cliente.ClienteNombre || 'CLIENTE',
+        ruc: mov.cliente.ruc || mov.cliente.ClienteRuc || mov.cliente.ClienteDni || '---',
+        direccion: mov.cliente.direccion || mov.cliente.ClienteDireccion || '---',
+        responsable: mov.usuario_creacion || undefined,
+      };
+    }
+
+    return {
+      nombre: 'ALMACÉN PRINCIPAL - COMERCIAL VALENCIA',
+      ruc: datosEmpresa?.EmpresaRuc || '10181935451',
+      direccion: datosEmpresa?.EmpresaDireccion || 'Av. Principal 123 - Lima, Perú',
+      responsable: mov.usuario_creacion || undefined,
+    };
+  };
+
+  const handleImprimirOficial = async (mov) => {
+    const id = mov.Movimiento_productoId || mov.id;
+    if (id) {
+      try {
+        const res = await api.inventario.movimientoDetalle(id);
+        if (res?.success && res?.data) {
+          setMovimientoParaOficial(res.data);
+          setShowModalOficial(true);
+          return;
+        }
+      } catch (err) {
+        console.error('Error al cargar detalle para impresión oficial:', err);
+      }
+    }
+    setMovimientoParaOficial(mov);
+    setShowModalOficial(true);
+  };
+
+  const renderBadgeSubtipo = (subtipo) => {
+    switch (subtipo) {
+      case 'RECEPCION_OC':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+            Recepción OC
+          </span>
+        );
+      case 'ANULACION_RECEPCION':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            Anulación OC
+          </span>
+        );
+      case 'COMPRA_RAPIDA':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            Compra Rápida
+          </span>
+        );
+      case 'AJUSTE_MANUAL':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+            Ajuste Manual
+          </span>
+        );
+      case 'DEVOLUCION_CLIENTE':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+            Devolución
+          </span>
+        );
+      case 'VENTA_PEDIDO':
+      case 'VENTA':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+            Venta
+          </span>
+        );
+      case 'INVENTARIO_INICIAL':
+        return (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            Inv. Inicial
+          </span>
+        );
+      default:
+        return subtipo ? (
+          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+            {subtipo}
+          </span>
+        ) : null;
+    }
+  };
 
   // Cuando cambia el producto seleccionado en el combo
   const handleProductoChange = (e) => {
@@ -714,43 +856,91 @@ export default function GestionMovimientos() {
               </h2>
             </div>
 
-            {/* Filtros de Tipo */}
-            <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setFiltroTipo('')}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === '' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                Todos
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroTipo('E')}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'E' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-emerald-700'}`}
-              >
-                Entradas
-              </button>
-              <button
-                type="button"
-                onClick={() => setFiltroTipo('S')}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'S' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-rose-700'}`}
-              >
-                Salidas
-              </button>
+            <div className="flex items-center gap-2">
+              {/* Filtros de Tipo */}
+              <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo('');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === '' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo('E');
+                    setFiltroSubtipo('');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'E' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-emerald-700'}`}
+                >
+                  Entradas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroTipo('S');
+                    setFiltroSubtipo('');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'S' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-rose-700'}`}
+                >
+                  Salidas
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Filtros Rápidos: Buscador y Selector de Período (1d, 7d, 15d, 30d) */}
+          {/* Filtros Rápidos: Buscador, Subtipo y Selector de Período */}
           <div className="space-y-2.5">
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Buscar por producto o número de guía..."
+                placeholder="Buscar por producto, documento o motivo..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors"
               />
+            </div>
+
+            {/* Filtro por Subtipo de Operación */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
+                <Tag className="w-3 h-3 text-slate-400" /> Subtipo:
+              </span>
+              {[
+                { label: 'Todos', value: '' },
+                { label: 'Recepción OC', value: 'RECEPCION_OC' },
+                { label: 'Anulación OC', value: 'ANULACION_RECEPCION' },
+                { label: 'Compra Rápida', value: 'COMPRA_RAPIDA' },
+                { label: 'Ajuste Manual', value: 'AJUSTE_MANUAL' },
+                { label: 'Devolución', value: 'DEVOLUCION_CLIENTE' },
+                { label: 'Despacho Venta', value: 'VENTA_PEDIDO' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setFiltroSubtipo(opt.value);
+                    if (opt.value) {
+                      setFiltroTipo('');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                    filtroSubtipo === opt.value
+                      ? 'bg-purple-600 text-white shadow-xs font-bold'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
 
             {/* Selector de Período (1 día, 7 días, 15 días, 30 días) */}
@@ -837,8 +1027,13 @@ export default function GestionMovimientos() {
                             </span>
                           </td>
 
-                          <td className="py-3 px-3.5 font-mono text-slate-600 font-medium">
-                            {m.documento_referencia || '—'}
+                          <td className="py-3 px-3.5">
+                            <div className="font-mono text-slate-700 font-bold">
+                              {m.documento_referencia || m.documento_operacion_id || m.Movimiento_productoDocumentoOperacionId || '—'}
+                            </div>
+                            <div className="mt-1">
+                              {renderBadgeSubtipo(m.subtipo || m.Movimiento_productoSubtipo)}
+                            </div>
                           </td>
 
                           <td className="py-3 px-3.5 text-center font-mono text-emerald-800 bg-emerald-50/30 font-semibold">
@@ -887,10 +1082,7 @@ export default function GestionMovimientos() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setMovimientoParaOficial(m);
-                                  setShowModalOficial(true);
-                                }}
+                                onClick={() => handleImprimirOficial(m)}
                                 className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-slate-200/80 hover:border-blue-200 shadow-2xs"
                                 title="Imprimir Orden Oficial de Movimiento"
                               >
@@ -1092,10 +1284,7 @@ export default function GestionMovimientos() {
             <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setMovimientoParaOficial(movimientoDetalle);
-                  setShowModalOficial(true);
-                }}
+                onClick={() => handleImprimirOficial(movimientoDetalle)}
                 className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -1118,11 +1307,7 @@ export default function GestionMovimientos() {
         <DocumentoOrdenOficial
           isOpen={showModalOficial}
           onClose={() => setShowModalOficial(false)}
-          headerType={
-            (movimientoParaOficial.Movimiento_productoTipo_Movimiento === 'S' || movimientoParaOficial.tipo_movimiento === 'S')
-              ? 'ORDEN DE EGRESO DE STOCK'
-              : 'ORDEN DE INGRESO DE STOCK'
-          }
+          headerType={resolverHeaderType(movimientoParaOficial)}
           metadata={{
             fecha: movimientoParaOficial.fecha_movimiento_formateada?.split(' ')[0] || movimientoParaOficial.fecha_movimiento || new Date().toLocaleDateString('es-PE'),
             numero: movimientoParaOficial.documento_referencia || movimientoParaOficial.Movimiento_productoDocumentoOperacionId || `MOV-${movimientoParaOficial.id || movimientoParaOficial.Movimiento_productoId || '0001'}`,
@@ -1137,27 +1322,41 @@ export default function GestionMovimientos() {
               second: '2-digit',
             }).replace('.', ''),
           }}
-          entidad={{
-            nombre: 'ALMACÉN PRINCIPAL - COMERCIAL VALENCIA',
-            ruc: datosEmpresa?.EmpresaRuc || '10181935451',
-            direccion: datosEmpresa?.EmpresaDireccion || 'Av. Principal 123 - Lima, Perú',
-            responsable: movimientoParaOficial.usuario_creacion || undefined,
-          }}
+          entidad={resolverEntidadMovimiento(movimientoParaOficial)}
           items={[
             {
-              codigo: movimientoParaOficial.producto_id || movimientoParaOficial.ProductoId || movimientoParaOficial.Movimiento_productoProductoId || '---',
-              cantidad: movimientoParaOficial.cantidad || movimientoParaOficial.Movimiento_productoCantidad || 1,
-              medida: movimientoParaOficial.unidad_abreviatura || movimientoParaOficial.unidad || 'UND',
+              codigo: movimientoParaOficial.producto_id || movimientoParaOficial.ProductoId || movimientoParaOficial.Movimiento_producto_ProductoId || movimientoParaOficial.Movimiento_productoProductoId || '---',
+              cantidad: Number(
+                movimientoParaOficial.Movimiento_productoCantidadPresentacion ||
+                (movimientoParaOficial.Movimiento_productoTipoMovimiento === 'E'
+                  ? movimientoParaOficial.Movimiento_productoCantidadEntrada
+                  : movimientoParaOficial.Movimiento_productoCantidadSalida) ||
+                movimientoParaOficial.cantidad ||
+                1
+              ),
+              medida: movimientoParaOficial.unidad_movimiento_abreviatura || movimientoParaOficial.unidad_abreviatura || movimientoParaOficial.unidad_base_abreviatura || movimientoParaOficial.unidad || 'UND',
               descripcion: movimientoParaOficial.producto_nombre || movimientoParaOficial.ProductoNombre || 'PRODUCTO DE ALMACÉN',
               suc: 'AC',
-              precio: movimientoParaOficial.precio_unitario || movimientoParaOficial.Movimiento_productoPrecio_Unitario || 0,
-              total: (movimientoParaOficial.cantidad || movimientoParaOficial.Movimiento_productoCantidad || 1) * (movimientoParaOficial.precio_unitario || movimientoParaOficial.Movimiento_productoPrecio_Unitario || 0),
+              precio: Number(movimientoParaOficial.Movimiento_productoCostoPrecioUnitario || movimientoParaOficial.precio_unitario || 0),
+              total: Number(
+                movimientoParaOficial.costo_total_estimado != null
+                  ? movimientoParaOficial.costo_total_estimado
+                  : ((Number(movimientoParaOficial.Movimiento_productoCantidadPresentacion || movimientoParaOficial.cantidad || 1)) * Number(movimientoParaOficial.Movimiento_productoCostoPrecioUnitario || movimientoParaOficial.precio_unitario || 0))
+              ),
             }
           ]}
           totales={{
-            subtotal: ((movimientoParaOficial.cantidad || movimientoParaOficial.Movimiento_productoCantidad || 1) * (movimientoParaOficial.precio_unitario || movimientoParaOficial.Movimiento_productoPrecio_Unitario || 0)),
+            subtotal: Number(
+              movimientoParaOficial.costo_total_estimado != null
+                ? movimientoParaOficial.costo_total_estimado
+                : ((Number(movimientoParaOficial.Movimiento_productoCantidadPresentacion || movimientoParaOficial.cantidad || 1)) * Number(movimientoParaOficial.Movimiento_productoCostoPrecioUnitario || movimientoParaOficial.precio_unitario || 0))
+            ),
             igv: 0,
-            totalGeneral: ((movimientoParaOficial.cantidad || movimientoParaOficial.Movimiento_productoCantidad || 1) * (movimientoParaOficial.precio_unitario || movimientoParaOficial.Movimiento_productoPrecio_Unitario || 0)),
+            totalGeneral: Number(
+              movimientoParaOficial.costo_total_estimado != null
+                ? movimientoParaOficial.costo_total_estimado
+                : ((Number(movimientoParaOficial.Movimiento_productoCantidadPresentacion || movimientoParaOficial.cantidad || 1)) * Number(movimientoParaOficial.Movimiento_productoCostoPrecioUnitario || movimientoParaOficial.precio_unitario || 0))
+            ),
           }}
           empresa={{
             nombre: datosEmpresa?.EmpresaRazonSocial || datosEmpresa?.EmpresaNombreComercial || 'COMERCIAL VALENCIA',
