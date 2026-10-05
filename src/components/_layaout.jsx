@@ -561,6 +561,23 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                     <button
                       onClick={() => {
                         setActiveMenu('inventario');
+                        setActiveSubMenu('inventario_recepcion');
+                      }}
+                      className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
+                        activeMenu === 'inventario' && activeSubMenu === 'inventario_recepcion'
+                          ? 'bg-slate-800/90 text-blue-400 font-medium'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeMenu === 'inventario' && activeSubMenu === 'inventario_recepcion' ? 'bg-blue-400' : 'bg-slate-600'
+                      }`} />
+                      <span className="truncate">Recepción de Stock</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveMenu('inventario');
                         setActiveSubMenu('inventario_ajustes');
                       }}
                       className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
@@ -803,7 +820,7 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 setOpenDropdowns(prev => ({ ...prev, ordenes: true }));
               }}
             />
-          ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion' ? (
+          ) : (activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion') || (activeMenu === 'inventario' && activeSubMenu === 'inventario_recepcion') ? (
             <GestionRecepcionMercaderia />
           ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_predicciones' ? (
             <PrediccionesCompra
