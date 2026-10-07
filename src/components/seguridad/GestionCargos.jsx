@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionCargos() {
   const [cargos, setCargos] = useState([]);
@@ -254,15 +255,18 @@ export default function GestionCargos() {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estado
               </label>
-              <select
-                name="cargoEstado"
+              <StyledSelect
+                size="form"
                 value={formData.cargoEstado}
-                onChange={handleInputChange}
-                className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="A">Activo (Habilitado para asignar a empleados)</option>
-                <option value="I">Inactivo</option>
-              </select>
+                onChange={(v) => handleInputChange({ target: { name: 'cargoEstado', value: v } })}
+                options={[
+                  { value: 'A', label: 'Activo (Habilitado para asignar a empleados)' },
+                  { value: 'I', label: 'Inactivo' },
+                ]}
+                placeholder="Seleccionar..."
+                panelWidth={260}
+                ariaLabel="Estado del cargo"
+              />
             </div>
 
             <div className="pt-3">

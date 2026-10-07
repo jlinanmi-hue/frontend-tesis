@@ -38,12 +38,308 @@ import {
   MessageSquare,
   Bot,
   User,
-  Zap
+  Zap,
+  Truck,
+  Navigation,
+  Compass,
+  MapPinned,
+  CalendarDays
 } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import { point } from '@turf/helpers';
 import { sileo } from 'sileo';
 import api from '../../services/api';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
 import ModalCompraRapida from './ModalCompraRapida';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+const TRUJILLO_CENTER = [-79.0287, -8.1116];
+
+// Delimitación geográfica estricta: Solo provincia de Trujillo
+const TRUJILLO_BOUNDS = [
+  [-79.25, -8.28], // Suroeste [lng, lat]
+  [-78.70, -7.90]  // Noreste [lng, lat]
+];
+
+const ZONA_COLORES = {
+  'Trujillo Centro': '#3b82f6',
+  'Florencia de Mora': '#facc15',
+  'El Porvenir': '#fb923c',
+  'Alto Trujillo': '#c084fc',
+  'La Esperanza': '#f472b6',
+  'Víctor Larco Herrera': '#22c55e',
+  'Victor Larco Herrera': '#22c55e',
+  'Moche': '#eab308',
+  'Huanchaco': '#22d3ee',
+  'Laredo': '#a3a380',
+  'Salaverry': '#e879f9',
+  'Poroto': '#fde68a',
+  'Simbal': '#86efac',
+};
+
+// Catálogo de distritos de Trujillo para validación semántica cruzada
+const DISTRITOS_TRUJILLO = [
+  { nombre: 'Laredo', id: 'ZD-00008', regex: /\blaredo\b/i },
+  { nombre: 'La Esperanza', id: 'ZD-00004', regex: /\b(la\s+esperanza|esperanza)\b/i },
+  { nombre: 'El Porvenir', id: 'ZD-00003', regex: /\b(el\s+porvenir|porvenir)\b/i },
+  { nombre: 'Florencia de Mora', id: 'ZD-00002', regex: /\b(florencia\s+de\s+mora|florencia)\b/i },
+  { nombre: 'Víctor Larco Herrera', id: 'ZD-00005', regex: /\b(v[ií]ctor\s+larco(\s+herrera)?|buenos\s+aires)\b/i },
+  { nombre: 'Huanchaco', id: 'ZD-00007', regex: /\bhuanchaco\b/i },
+  { nombre: 'Moche', id: 'ZD-00006', regex: /\bmoche\b/i },
+  { nombre: 'Salaverry', id: 'ZD-00009', regex: /\bsalaverry\b/i },
+  { nombre: 'Alto Trujillo', id: 'ZD-00012', regex: /\balto\s+trujillo\b/i },
+  { nombre: 'Poroto', id: 'ZD-00010', regex: /\bporoto\b/i },
+  { nombre: 'Simbal', id: 'ZD-00011', regex: /\bsimbal\b/i },
+  { nombre: 'Trujillo Centro', id: 'ZD-00001', regex: /\b(trujillo(\s+centro)?|centro\s+hist[oó]rico|urb\.?\s+[a-z]+)\b/i },
+];
+
+const detectarDistritoEnTexto = (texto) => {
+  if (!texto || typeof texto !== 'string') return null;
+  const limpio = texto.trim();
+  if (!limpio) return null;
+  for (const item of DISTRITOS_TRUJILLO) {
+    if (item.regex.test(limpio)) {
+      return item;
+    }
+  }
+  return null;
+};
+
+// Parser inteligente de coordenadas GPS (ej. "-8.111816, -79.015388", URL de Maps o texto con coords)
+const parseCoordenadas = (texto) => {
+  if (!texto || typeof texto !== 'string') return null;
+  const limpio = texto.trim();
+  const match = limpio.match(/(-?\d+\.\d{3,})\s*[,;\s]\s*(-?\d+\.\d{3,})/);
+  if (!match) return null;
+  const n1 = parseFloat(match[1]);
+  const n2 = parseFloat(match[2]);
+  if (isNaN(n1) || isNaN(n2)) return null;
+
+  let lat = null;
+  let lng = null;
+
+  // En Trujillo/Perú: Latitud es negativa ~ -8.11, Longitud es negativa ~ -79.02
+  if (n1 >= -79.35 && n1 <= -78.60 && n2 >= -8.35 && n2 <= -7.80) {
+    lng = n1;
+    lat = n2;
+  } else if (n2 >= -79.35 && n2 <= -78.60 && n1 >= -8.35 && n1 <= -7.80) {
+    lat = n1;
+    lng = n2;
+  } else if (Math.abs(n1) > Math.abs(n2)) {
+    lng = n1;
+    lat = n2;
+  } else {
+    lat = n1;
+    lng = n2;
+  }
+
+  return {
+    lat: Number(lat.toFixed(6)),
+    lng: Number(lng.toFixed(6)),
+  };
+};
+
+// Geocodificación directa en Trujillo con Mapbox Places (soporta Direcciones de texto y Coordenadas GPS)
+const geocodificarDireccionMapbox = async (query) => {
+  if (!query || !query.trim()) return [];
+
+  // 1. Detectar si el usuario pegó o escribió coordenadas GPS directas
+  const coords = parseCoordenadas(query);
+  if (coords) {
+    const { lat, lng } = coords;
+    try {
+      const revUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&language=es`;
+      const revRes = await fetch(revUrl);
+      if (revRes.ok) {
+        const revData = await revRes.json();
+        const topFeature = (revData.features || [])[0];
+        const placeName = topFeature
+          ? (topFeature.place_name || '')
+              .replace(/,?\s*La Libertad,?\s*Perú?$/i, '')
+              .replace(/,?\s*Departamento de La Libertad,?\s*Perú?$/i, '')
+              .replace(/,?\s*Perú$/i, '')
+              .trim()
+          : `Coordenadas: ${lat}, ${lng}`;
+
+        const contextDistrict = topFeature?.context?.find(
+          (c) => c.id?.startsWith('place') || c.id?.startsWith('locality')
+        )?.text || null;
+
+        return [
+          {
+            id: `coord-${lng}-${lat}`,
+            nombre: placeName || `Punto GPS (${lat}, ${lng})`,
+            nombreCompleto: topFeature?.place_name || `${lat}, ${lng}`,
+            center: [lng, lat],
+            lat,
+            lng,
+            isCoords: true,
+            contextDistrict,
+          },
+        ];
+      }
+    } catch (err) {
+      console.warn('Error en reverse geocoding con coordenadas:', err);
+    }
+
+    return [
+      {
+        id: `coord-${lng}-${lat}`,
+        nombre: `Punto GPS (${lat}, ${lng})`,
+        nombreCompleto: `${lat}, ${lng}`,
+        center: [lng, lat],
+        lat,
+        lng,
+        isCoords: true,
+        contextDistrict: null,
+      },
+    ];
+  }
+
+  // 2. Geocodificación por búsqueda de texto en Trujillo
+  try {
+    const cleanQuery = query.replace(/,?\s*Departamento de\s*/i, ' ').trim();
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cleanQuery)}.json?access_token=${MAPBOX_TOKEN}&country=PE&bbox=-79.25,-8.28,-78.70,-7.90&language=es&limit=5&types=address,poi,place,neighborhood`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.features || []).map((f) => {
+      const placeName = (f.place_name || '')
+        .replace(/,?\s*La Libertad,?\s*Perú?$/i, '')
+        .replace(/,?\s*Departamento de La Libertad,?\s*Perú?$/i, '')
+        .replace(/,?\s*Perú$/i, '')
+        .trim();
+      const contextDistrict = f.context?.find((c) => c.id?.startsWith('place') || c.id?.startsWith('locality'))?.text || null;
+      return {
+        id: f.id,
+        nombre: placeName,
+        nombreCompleto: f.place_name,
+        center: f.center, // [lng, lat]
+        lat: f.center?.[1] ? Number(f.center[1].toFixed(6)) : null,
+        lng: f.center?.[0] ? Number(f.center[0].toFixed(6)) : null,
+        isCoords: false,
+        contextDistrict,
+      };
+    });
+  } catch (err) {
+    console.warn('Error en geocodificación Mapbox:', err);
+    return [];
+  }
+};
+
+// Componente interactivo de búsqueda de direcciones en Trujillo
+function BuscadorDireccionMapbox({ onSelectUbicacion, placeholder = 'Buscar dirección o lugar en Trujillo (ej. Li-1084 Laredo, Av. Larco...)' }) {
+  const [query, setQuery] = useState('');
+  const [sugerencias, setSugerencias] = useState([]);
+  const [isBuscando, setIsBuscando] = useState(false);
+  const [mostrarDropdown, setMostrarDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!query || query.trim().length < 2) {
+      setSugerencias([]);
+      setMostrarDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsBuscando(true);
+      const res = await geocodificarDireccionMapbox(query);
+      setSugerencias(res);
+      setMostrarDropdown(res.length > 0);
+      setIsBuscando(false);
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Cierra el dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setMostrarDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (item) => {
+    onSelectUbicacion(item);
+    setQuery(item.nombre);
+    setMostrarDropdown(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sugerencias.length > 0) {
+        handleSelect(sugerencias[0]);
+      }
+    }
+  };
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      <div className="relative flex items-center">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => sugerencias.length > 0 && setMostrarDropdown(true)}
+          placeholder={placeholder}
+          className="w-full pl-9 pr-16 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-2xs"
+        />
+        <div className="absolute right-2 flex items-center gap-1">
+          {isBuscando && (
+            <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin mr-1" />
+          )}
+          {query && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setSugerencias([]);
+                setMostrarDropdown(false);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mostrarDropdown && sugerencias.length > 0 && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100">
+          {sugerencias.map((item) => (
+            <div
+              key={item.id}
+              onClick={() => handleSelect(item)}
+              className="p-2.5 hover:bg-blue-50/70 cursor-pointer transition flex items-center justify-between gap-2 text-xs"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="font-semibold text-slate-800 truncate">{item.nombre}</span>
+              </div>
+              {item.contextDistrict && (
+                <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                  {item.contextDistrict}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefill = null }) {
   // Pestaña activa: 'nueva' (Registrar Pedido) | 'historial' (Historial y Monitoreo)
@@ -53,6 +349,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   const [clientesList, setClientesList] = useState([]);
   const [canalesList, setCanalesList] = useState([]);
   const [productosSelect, setProductosSelect] = useState([]);
+  const [zonasDeliveryList, setZonasDeliveryList] = useState([]);
   const [isLoadingCatalogos, setIsLoadingCatalogos] = useState(false);
 
   // ----------------------------------------------------
@@ -77,6 +374,116 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   // Canal y Acuerdo Comercial
   const [canalSeleccionado, setCanalSeleccionado] = useState('CNL-00001');
   const [acuerdoComercial, setAcuerdoComercial] = useState('Contado Mostrador');
+
+  // Despacho, Fecha de Entrega y Delivery
+  const [fechaEntrega, setFechaEntrega] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  const [esDelivery, setEsDelivery] = useState(false);
+  const [zonaSeleccionada, setZonaSeleccionada] = useState(null);
+  const [direccionEntrega, setDireccionEntrega] = useState('');
+  const [referenciaEntrega, setReferenciaEntrega] = useState('');
+  const [customerCoords, setCustomerCoords] = useState(null);
+  const [zonaError, setZonaError] = useState(null);
+
+  const deliveryMapContainerRef = useRef(null);
+  const deliveryMapRef = useRef(null);
+  const deliveryCustomerMarkerRef = useRef(null);
+  const deliveryStoreMarkerRef = useRef(null);
+  const zonaSeleccionadaRef = useRef(null);
+  const direccionEntregaRef = useRef('');
+
+  useEffect(() => {
+    zonaSeleccionadaRef.current = zonaSeleccionada;
+    try {
+      deliveryMapRef.current?._aplicarSeleccionZona?.();
+    } catch {}
+  }, [zonaSeleccionada]);
+
+  useEffect(() => {
+    direccionEntregaRef.current = direccionEntrega;
+  }, [direccionEntrega]);
+
+  const [sugerenciaMapa, setSugerenciaMapa] = useState(null);
+
+  // Geocodificación inversa Mapbox: sugiere la dirección del pin
+  const sugerirDireccionMapa = async (lng, lat) => {
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&language=es&limit=1&types=address,poi,place,neighborhood`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const nombre = data?.features?.[0]?.place_name;
+      if (!nombre) {
+        setSugerenciaMapa(null);
+        return;
+      }
+      const corta = nombre
+        .replace(/,?\s*Departamento de La Libertad,?\s*Perú?$/i, '')
+        .replace(/,?\s*La Libertad,?\s*Perú?$/i, '')
+        .replace(/,?\s*Perú$/i, '')
+        .trim();
+      setSugerenciaMapa(corta);
+    } catch {
+      setSugerenciaMapa(null);
+    }
+  };
+
+  // Acciones de geocodificación y sincronización de dirección
+  const handleSelectUbicacionEnFormulario = (item) => {
+    if (!item?.center) return;
+    const [lng, lat] = item.center;
+    const fixedLng = Number(lng.toFixed(6));
+    const fixedLat = Number(lat.toFixed(6));
+    setCustomerCoords([fixedLng, fixedLat]);
+
+    if (deliveryCustomerMarkerRef.current) {
+      deliveryCustomerMarkerRef.current.setLngLat([fixedLng, fixedLat]);
+    }
+    if (deliveryMapRef.current) {
+      deliveryMapRef.current.flyTo({ center: [fixedLng, fixedLat], zoom: 15 });
+    }
+
+    let zona = detectarZonaPorCoordenadas(fixedLng, fixedLat, item.contextDistrict);
+    if (!zona && item.contextDistrict) {
+      const match = (zonasDeliveryList || []).find((z) =>
+        (z.nombre || z.Zona_DeliveryNombre || '').toLowerCase().includes(item.contextDistrict.toLowerCase())
+      );
+      if (match) {
+        zona = {
+          id: match.id || match.Zona_DeliveryId,
+          nombre: match.nombre || match.Zona_DeliveryNombre,
+          tarifa: parseFloat(match.tarifa || match.Zona_DeliveryTarifa || 0),
+          raw: match,
+        };
+      }
+    }
+
+    if (zona) {
+      setZonaSeleccionada(zona);
+      setZonaError(null);
+      sileo.success(`Zona detectada: ${zona.nombre} (Tarifa: S/ ${zona.tarifa.toFixed(2)})`);
+    } else {
+      setZonaSeleccionada(null);
+      setZonaError('Ubicación fuera de zonas activas de Trujillo.');
+    }
+
+    setDireccionEntrega(item.nombre);
+    setSugerenciaMapa(null);
+  };
+
+  const handleUbicarDireccionTexto = async () => {
+    if (!direccionEntrega.trim()) {
+      sileo.warning('Escribe primero una dirección para buscar en el mapa.');
+      return;
+    }
+    const resultados = await geocodificarDireccionMapbox(direccionEntrega);
+    if (resultados && resultados.length > 0) {
+      handleSelectUbicacionEnFormulario(resultados[0]);
+    } else {
+      sileo.info('No se ubicó la dirección exacta. Puedes arrastrar el pin azul manualmente en el mapa.');
+    }
+  };
 
   // Productos en el borrador del pedido
   const [productosPedido, setProductosPedido] = useState([]);
@@ -274,21 +681,108 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   const [ticketOrden, setTicketOrden] = useState(null);
   const [datosEmpresa, setDatosEmpresa] = useState(null);
 
+  // Modal para Modificar Despacho / Reprogramar Fecha en órdenes 'P'
+  const [showModalEditarDespacho, setShowModalEditarDespacho] = useState(false);
+  const [ordenParaEditarDespacho, setOrdenParaEditarDespacho] = useState(null);
+  const [despachoEditFecha, setDespachoEditFecha] = useState('');
+  const [despachoEditEsDelivery, setDespachoEditEsDelivery] = useState(false);
+  const [despachoEditZona, setDespachoEditZona] = useState(null);
+  const [despachoEditDireccion, setDespachoEditDireccion] = useState('');
+  const [despachoEditReferencia, setDespachoEditReferencia] = useState('');
+  const [isGuardandoDespacho, setIsGuardandoDespacho] = useState(false);
+  const [despachoEditCoords, setDespachoEditCoords] = useState(null);
+  const [despachoEditZonaError, setDespachoEditZonaError] = useState(null);
+  const editDespachoMapContainerRef = useRef(null);
+  const editDespachoMapRef = useRef(null);
+  const editDespachoCustomerMarkerRef = useRef(null);
+  const editDespachoStoreMarkerRef = useRef(null);
+  const despachoEditZonaRef = useRef(null);
+
+  useEffect(() => {
+    despachoEditZonaRef.current = despachoEditZona;
+    try {
+      editDespachoMapRef.current?._aplicarSeleccionZona?.();
+    } catch {}
+  }, [despachoEditZona]);
+
+  const handleSelectUbicacionEnEditModal = (item) => {
+    if (!item?.center) return;
+    const [lng, lat] = item.center;
+    const fixedLng = Number(lng.toFixed(6));
+    const fixedLat = Number(lat.toFixed(6));
+    setDespachoEditCoords([fixedLng, fixedLat]);
+
+    if (editDespachoCustomerMarkerRef.current) {
+      editDespachoCustomerMarkerRef.current.setLngLat([fixedLng, fixedLat]);
+    }
+    if (editDespachoMapRef.current) {
+      editDespachoMapRef.current.flyTo({ center: [fixedLng, fixedLat], zoom: 15 });
+    }
+
+    let zona = detectarZonaPorCoordenadas(fixedLng, fixedLat, item.contextDistrict);
+    if (!zona && item.contextDistrict) {
+      const match = (zonasDeliveryList || []).find((z) =>
+        (z.nombre || z.Zona_DeliveryNombre || '').toLowerCase().includes(item.contextDistrict.toLowerCase())
+      );
+      if (match) {
+        zona = {
+          id: match.id || match.Zona_DeliveryId,
+          nombre: match.nombre || match.Zona_DeliveryNombre,
+          tarifa: parseFloat(match.tarifa || match.Zona_DeliveryTarifa || 0),
+          raw: match,
+        };
+      }
+    }
+
+    if (zona) {
+      const zonaCompleta = (zonasDeliveryList || []).find((z) => (z.Zona_DeliveryId || z.id) === (zona.id || zona.Zona_DeliveryId)) || zona;
+      setDespachoEditZona(zonaCompleta);
+      setDespachoEditZonaError(null);
+      sileo.success(`Zona reasignada: ${zonaCompleta.Zona_DeliveryNombre || zonaCompleta.nombre} (Flete: S/ ${parseFloat(zonaCompleta.Zona_DeliveryTarifa || zonaCompleta.tarifa || 0).toFixed(2)})`);
+    } else {
+      setDespachoEditZona(null);
+      setDespachoEditZonaError('Ubicación fuera de zonas activas de Trujillo.');
+    }
+
+    setDespachoEditDireccion(item.nombre);
+  };
+
+  const handleUbicarDireccionTextoEditModal = async () => {
+    if (!despachoEditDireccion.trim()) {
+      sileo.warning('Escribe primero una dirección para ubicar en el mapa.');
+      return;
+    }
+    const resultados = await geocodificarDireccionMapbox(despachoEditDireccion);
+    if (resultados && resultados.length > 0) {
+      handleSelectUbicacionEnEditModal(resultados[0]);
+    } else {
+      sileo.info('No se ubicó la dirección exacta. Puedes arrastrar el pin azul manualmente en el mapa.');
+    }
+  };
+
+
   // ----------------------------------------------------
   // CARGA INICIAL DE CATÁLOGOS
   // ----------------------------------------------------
   const cargarCatalogos = async () => {
     setIsLoadingCatalogos(true);
     try {
-      const [resClientes, resCanales, resProductos, resEmpresa] = await Promise.allSettled([
+      const [resClientes, resCanales, resProductos, resEmpresa, resZonas] = await Promise.allSettled([
         api.clientes.listar({ per_page: 200 }),
         api.catalogos.canalesPedido(),
         api.inventario.productosSelect(),
         api.empresa.obtener(),
+        api.zonasDelivery.activas(),
       ]);
 
       if (resEmpresa.status === 'fulfilled' && resEmpresa.value?.data) {
         setDatosEmpresa(resEmpresa.value.data);
+      }
+
+      if (resZonas.status === 'fulfilled' && resZonas.value?.data) {
+        const rawZ = resZonas.value.data;
+        const listZ = Array.isArray(rawZ) ? rawZ : (rawZ?.data || []);
+        setZonasDeliveryList(listZ);
       }
 
       if (resClientes.status === 'fulfilled' && resClientes.value?.data) {
@@ -925,12 +1419,572 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   };
 
   // ----------------------------------------------------
+  // LOGÍSTICA DE DELIVERY Y GEOLOCALIZACIÓN CON TURF & MAPBOX
+  // ----------------------------------------------------
+  const detectarZonaPorCoordenadas = useCallback((lng, lat, hintDistrito = null) => {
+    if (!zonasDeliveryList || zonasDeliveryList.length === 0) return null;
+
+    // Match prioritario por hint de distrito si proviene del geocodificador o texto
+    if (hintDistrito) {
+      const matchHint = zonasDeliveryList.find((z) => {
+        const nom = (z.nombre || z.Zona_DeliveryNombre || '').toLowerCase();
+        return nom.includes(hintDistrito.toLowerCase()) || hintDistrito.toLowerCase().includes(nom);
+      });
+      if (matchHint) {
+        return {
+          id: matchHint.id || matchHint.Zona_DeliveryId,
+          nombre: matchHint.nombre || matchHint.Zona_DeliveryNombre,
+          tarifa: parseFloat(matchHint.tarifa || matchHint.Zona_DeliveryTarifa || 0),
+          raw: matchHint,
+          esAproximada: false,
+        };
+      }
+    }
+
+    const pt = point([lng, lat]);
+
+    // Area plana del anillo (shoelace) para priorizar el distrito más
+    // pequeño cuando hay solapes (ej. Huanchaco contiene al centro urbano).
+    const ringArea = (ring) => {
+      if (!ring || ring.length < 4) return Infinity;
+      let s = 0;
+      for (let i = 0; i < ring.length - 1; i++) {
+        s += (ring[i][0] * ring[i + 1][1]) - (ring[i + 1][0] * ring[i][1]);
+      }
+      return Math.abs(s / 2);
+    };
+
+    const matches = [];
+    for (const z of zonasDeliveryList) {
+      try {
+        const rawGeo = z.poligono_geojson || z.Zona_DeliveryPoligonoGeoJSON;
+        if (!rawGeo) continue;
+        const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+        if (booleanPointInPolygon(pt, parsed)) {
+          const geom = parsed.geometry || parsed;
+          matches.push({
+            z,
+            area: ringArea(geom?.coordinates?.[0]),
+          });
+        }
+      } catch (err) {
+        console.warn('Error comprobando polígono de zona:', err);
+      }
+    }
+    if (matches.length > 0) {
+      matches.sort((a, b) => a.area - b.area);
+      const z = matches[0].z;
+      return {
+        id: z.id || z.Zona_DeliveryId,
+        nombre: z.nombre || z.Zona_DeliveryNombre,
+        tarifa: parseFloat(z.tarifa || z.Zona_DeliveryTarifa || 0),
+        raw: z,
+        esAproximada: false,
+      };
+    }
+
+    // Fallback: sin huecos. Si está dentro de Trujillo pero cayó en un
+    // intersticio entre polígonos, asigna la zona activa más cercana por centroide.
+    try {
+      const toRad = (d) => (d * Math.PI) / 180;
+      const havKm = (aLng, aLat, bLng, bLat) => {
+        const R = 6371;
+        const dLat = toRad(bLat - aLat);
+        const dLng = toRad(bLng - aLng);
+        const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+        return 2 * R * Math.asin(Math.sqrt(s));
+      };
+      let mejor = null;
+      let mejorDist = Infinity;
+      for (const z of zonasDeliveryList) {
+        try {
+          const rawGeo = z.poligono_geojson || z.Zona_DeliveryPoligonoGeoJSON;
+          if (!rawGeo) continue;
+          const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+          const geom = parsed.geometry || parsed;
+          const ring = geom?.coordinates?.[0];
+          if (!ring || ring.length === 0) continue;
+          const cLng = ring.reduce((acc, c) => acc + c[0], 0) / ring.length;
+          const cLat = ring.reduce((acc, c) => acc + c[1], 0) / ring.length;
+          const d = havKm(lng, lat, cLng, cLat);
+          if (d < mejorDist) {
+            mejorDist = d;
+            mejor = z;
+          }
+        } catch {}
+      }
+      if (mejor) {
+        return {
+          id: mejor.id || mejor.Zona_DeliveryId,
+          nombre: mejor.nombre || mejor.Zona_DeliveryNombre,
+          tarifa: parseFloat(mejor.tarifa || mejor.Zona_DeliveryTarifa || 0),
+          raw: mejor,
+          esAproximada: true,
+          distanciaKm: Number(mejorDist.toFixed(2)),
+        };
+      }
+    } catch {}
+    return null;
+  }, [zonasDeliveryList]);
+
+  const handleSeleccionarDistritoManual = (zonaId) => {
+    const z = (zonasDeliveryList || []).find(item => (item.id || item.Zona_DeliveryId) === zonaId);
+    if (!z) return;
+
+    const zonaObj = {
+      id: z.id || z.Zona_DeliveryId,
+      nombre: z.nombre || z.Zona_DeliveryNombre,
+      tarifa: parseFloat(z.tarifa || z.Zona_DeliveryTarifa || 0),
+      raw: z,
+    };
+    setZonaSeleccionada(zonaObj);
+    setZonaError(null);
+
+    try {
+      const rawGeo = z.poligono_geojson || z.Zona_DeliveryPoligonoGeoJSON;
+      if (rawGeo) {
+        const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+        const coords = parsed.geometry ? parsed.geometry.coordinates[0] : parsed.coordinates?.[0];
+        if (coords && coords.length > 0) {
+          const sumLng = coords.reduce((acc, c) => acc + c[0], 0);
+          const sumLat = coords.reduce((acc, c) => acc + c[1], 0);
+          const avgLng = Number((sumLng / coords.length).toFixed(6));
+          const avgLat = Number((sumLat / coords.length).toFixed(6));
+          setCustomerCoords([avgLng, avgLat]);
+
+          if (deliveryCustomerMarkerRef.current) {
+            deliveryCustomerMarkerRef.current.setLngLat([avgLng, avgLat]);
+          }
+          if (deliveryMapRef.current) {
+            deliveryMapRef.current.flyTo({ center: [avgLng, avgLat], zoom: 14 });
+            try {
+              deliveryMapRef.current._aplicarSeleccionZona?.();
+            } catch {}
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error centrando en distrito manual:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (!esDelivery || !deliveryMapContainerRef.current) return;
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
+    const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
+    const initialLngLat = customerCoords || [storeLng, storeLat];
+
+    const map = new mapboxgl.Map({
+      container: deliveryMapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: initialLngLat,
+      zoom: 12.8,
+      minZoom: 10,
+      maxZoom: 18,
+      maxBounds: TRUJILLO_BOUNDS,
+    });
+
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
+
+    const storeEl = document.createElement('div');
+    storeEl.className = 'w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg border-2 border-white font-bold cursor-pointer text-sm';
+    storeEl.title = 'Comercial Valencia (Tienda - Origen)';
+    storeEl.innerHTML = '🏪';
+
+    const storeMarker = new mapboxgl.Marker({ element: storeEl })
+      .setLngLat([storeLng, storeLat])
+      .setPopup(
+        new mapboxgl.Popup({ offset: 25 }).setHTML(`
+          <div style="font-size:12px; font-family:sans-serif; padding:4px;">
+            <strong style="color:#059669;">Comercial Valencia</strong><br/>
+            <span>Punto de Origen / Despacho</span><br/>
+            <small style="color:#64748b;">${datosEmpresa?.EmpresaDireccion || 'Trujillo'}</small>
+          </div>
+        `)
+      )
+      .addTo(map);
+
+    deliveryStoreMarkerRef.current = storeMarker;
+
+    const customerMarker = new mapboxgl.Marker({
+      draggable: true,
+      color: '#2563eb',
+    })
+      .setLngLat(initialLngLat)
+      .addTo(map);
+
+    deliveryCustomerMarkerRef.current = customerMarker;
+
+    const actualizarUbicacionCliente = (lng, lat, sugerir = false) => {
+      const fixedLng = Number(lng.toFixed(6));
+      const fixedLat = Number(lat.toFixed(6));
+      setCustomerCoords([fixedLng, fixedLat]);
+
+      // Delimitación geográfica estricta: Solo provincia de Trujillo
+      const dentroDeTrujillo = fixedLng >= -79.25 && fixedLng <= -78.70 && fixedLat >= -8.28 && fixedLat <= -7.90;
+      if (!dentroDeTrujillo) {
+        setZonaSeleccionada(null);
+        setZonaError('Ubicación fuera de Trujillo. Actualmente el servicio de delivery solo opera dentro de la provincia de Trujillo.');
+        return;
+      }
+
+      const zona = detectarZonaPorCoordenadas(fixedLng, fixedLat);
+      if (zona) {
+        setZonaSeleccionada(zona);
+        setZonaError(null);
+      } else {
+        setZonaSeleccionada(null);
+        setZonaError('La ubicación está en Trujillo pero fuera de las zonas activas de delivery.');
+      }
+
+      // La dirección del registro la digita el usuario (domicilio real).
+      // El mapa solo sugiere la calle del pin como ayuda opcional.
+      if (sugerir) {
+        sugerirDireccionMapa(fixedLng, fixedLat);
+      }
+    };
+
+    customerMarker.on('dragend', () => {
+      const pos = customerMarker.getLngLat();
+      actualizarUbicacionCliente(pos.lng, pos.lat, true);
+    });
+
+    map.on('click', (e) => {
+      customerMarker.setLngLat(e.lngLat);
+      actualizarUbicacionCliente(e.lngLat.lng, e.lngLat.lat, true);
+    });
+
+    map.on('load', () => {
+      try {
+        const features = (zonasDeliveryList || []).map((z, idx) => {
+          const rawGeo = z.poligono_geojson || z.Zona_DeliveryPoligonoGeoJSON;
+          if (!rawGeo) return null;
+          const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+          const geom = parsed.geometry || parsed;
+          if (!geom || !geom.coordinates) return null;
+          const zid = String(z.Zona_DeliveryId || z.id || idx);
+          const zname = z.Zona_DeliveryNombre || z.nombre || zid;
+          return {
+            type: 'Feature',
+            id: zid,
+            properties: {
+              zonaId: zid,
+              nombre: zname,
+              color: ZONA_COLORES[zname] || '#3b82f6',
+            },
+            geometry: geom,
+          };
+        }).filter(Boolean);
+
+        const collection = { type: 'FeatureCollection', features };
+
+        if (map.getSource('zonas-delivery')) {
+          map.getSource('zonas-delivery').setData(collection);
+        } else {
+          map.addSource('zonas-delivery', { type: 'geojson', data: collection });
+        }
+
+        if (!map.getLayer('zonas-fill')) {
+          map.addLayer({
+            id: 'zonas-fill',
+            type: 'fill',
+            source: 'zonas-delivery',
+            paint: {
+              'fill-color': ['get', 'color'],
+              'fill-opacity': [
+                'case',
+                ['boolean', ['feature-state', 'selected'], false],
+                0.55,
+                0.28,
+              ],
+            },
+          });
+        }
+        if (!map.getLayer('zonas-line')) {
+          map.addLayer({
+            id: 'zonas-line',
+            type: 'line',
+            source: 'zonas-delivery',
+            paint: {
+              'line-color': ['get', 'color'],
+              'line-width': [
+                'case',
+                ['boolean', ['feature-state', 'selected'], false],
+                3,
+                1.5,
+              ],
+              'line-opacity': 0.95,
+            },
+          });
+        }
+
+        // Resalta el distrito seleccionado (todo el polígono queda pintado)
+        const aplicarSeleccion = () => {
+          features.forEach((f) => {
+            try {
+              map.setFeatureState(
+                { source: 'zonas-delivery', id: f.id },
+                { selected: zonaSeleccionadaRef.current?.id === String(f.properties.zonaId) }
+              );
+            } catch {}
+          });
+        };
+        map._aplicarSeleccionZona = aplicarSeleccion;
+        aplicarSeleccion();
+      } catch (e) {
+        console.warn('Error dibujando zonas en mapa:', e);
+      }
+
+      if (customerCoords) {
+        actualizarUbicacionCliente(initialLngLat[0], initialLngLat[1], false);
+      }
+    });
+
+    deliveryMapRef.current = map;
+
+    return () => {
+      if (deliveryMapRef.current) {
+        deliveryMapRef.current.remove();
+        deliveryMapRef.current = null;
+      }
+    };
+  }, [esDelivery, zonasDeliveryList]);
+
+  // ----------------------------------------------------
+  // MAPBOX GL: MAPA INTERACTIVO EN MODAL MODIFICAR DESPACHO
+  // ----------------------------------------------------
+  useEffect(() => {
+    if (!showModalEditarDespacho || !despachoEditEsDelivery) {
+      if (editDespachoMapRef.current) {
+        editDespachoMapRef.current.remove();
+        editDespachoMapRef.current = null;
+      }
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (!editDespachoMapContainerRef.current) return;
+      if (editDespachoMapRef.current) {
+        editDespachoMapRef.current.remove();
+        editDespachoMapRef.current = null;
+      }
+
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+
+      const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
+      const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
+      const initialLngLat = despachoEditCoords || [storeLng, storeLat];
+
+      const map = new mapboxgl.Map({
+        container: editDespachoMapContainerRef.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: initialLngLat,
+        zoom: 12.8,
+        minZoom: 10,
+        maxZoom: 18,
+        maxBounds: TRUJILLO_BOUNDS,
+      });
+
+      map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
+
+      // Marcador de Tienda (Origen)
+      const storeEl = document.createElement('div');
+      storeEl.className = 'w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg border-2 border-white font-bold cursor-pointer text-xs';
+      storeEl.title = 'Comercial Valencia (Tienda - Origen)';
+      storeEl.innerHTML = '🏪';
+
+      const storeMarker = new mapboxgl.Marker({ element: storeEl })
+        .setLngLat([storeLng, storeLat])
+        .setPopup(
+          new mapboxgl.Popup({ offset: 25 }).setHTML(`
+            <div style="font-size:12px; font-family:sans-serif; padding:4px;">
+              <strong style="color:#059669;">Comercial Valencia</strong><br/>
+              <span>Punto de Origen / Despacho</span><br/>
+              <small style="color:#64748b;">${datosEmpresa?.EmpresaDireccion || 'Trujillo'}</small>
+            </div>
+          `)
+        )
+        .addTo(map);
+      editDespachoStoreMarkerRef.current = storeMarker;
+
+      // Marcador de Destino del Cliente (Arrastrable)
+      const customerMarker = new mapboxgl.Marker({
+        draggable: true,
+        color: '#2563eb',
+      })
+        .setLngLat(initialLngLat)
+        .addTo(map);
+      editDespachoCustomerMarkerRef.current = customerMarker;
+
+      const actualizarUbicacionModal = (lng, lat) => {
+        const fixedLng = Number(lng.toFixed(6));
+        const fixedLat = Number(lat.toFixed(6));
+        setDespachoEditCoords([fixedLng, fixedLat]);
+
+        // Delimitación geográfica estricta: Solo provincia de Trujillo
+        const dentroDeTrujillo = fixedLng >= -79.25 && fixedLng <= -78.70 && fixedLat >= -8.28 && fixedLat <= -7.90;
+        if (!dentroDeTrujillo) {
+          setDespachoEditZona(null);
+          setDespachoEditZonaError('Ubicación fuera de Trujillo. Solo despachamos en la provincia de Trujillo.');
+          return;
+        }
+
+        const zona = detectarZonaPorCoordenadas(fixedLng, fixedLat);
+        if (zona) {
+          const zonaCompleta = (zonasDeliveryList || []).find(z => (z.Zona_DeliveryId || z.id) === (zona.id || zona.Zona_DeliveryId)) || zona;
+          setDespachoEditZona(zonaCompleta);
+          setDespachoEditZonaError(null);
+        } else {
+          setDespachoEditZona(null);
+          setDespachoEditZonaError('La ubicación está en Trujillo pero fuera de las zonas activas de delivery.');
+        }
+      };
+
+      customerMarker.on('dragend', () => {
+        const pos = customerMarker.getLngLat();
+        actualizarUbicacionModal(pos.lng, pos.lat);
+      });
+
+      map.on('click', (e) => {
+        customerMarker.setLngLat(e.lngLat);
+        actualizarUbicacionModal(e.lngLat.lng, e.lngLat.lat);
+      });
+
+      map.on('load', () => {
+        try {
+          const features = (zonasDeliveryList || []).map((z, idx) => {
+            const rawGeo = z.poligono_geojson || z.Zona_DeliveryPoligonoGeoJSON;
+            if (!rawGeo) return null;
+            const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+            const geom = parsed.geometry || parsed;
+            if (!geom || !geom.coordinates) return null;
+            const zid = String(z.Zona_DeliveryId || z.id || idx);
+            const zname = z.Zona_DeliveryNombre || z.nombre || zid;
+            return {
+              type: 'Feature',
+              id: zid,
+              properties: {
+                zonaId: zid,
+                nombre: zname,
+                color: ZONA_COLORES[zname] || '#3b82f6',
+              },
+              geometry: geom,
+            };
+          }).filter(Boolean);
+
+          const collection = { type: 'FeatureCollection', features };
+
+          if (!map.getSource('zonas-delivery-edit')) {
+            map.addSource('zonas-delivery-edit', { type: 'geojson', data: collection });
+          }
+
+          if (!map.getLayer('zonas-fill-edit')) {
+            map.addLayer({
+              id: 'zonas-fill-edit',
+              type: 'fill',
+              source: 'zonas-delivery-edit',
+              paint: {
+                'fill-color': ['get', 'color'],
+                'fill-opacity': [
+                  'case',
+                  ['boolean', ['feature-state', 'selected'], false],
+                  0.55,
+                  0.22,
+                ],
+              },
+            });
+          }
+
+          if (!map.getLayer('zonas-line-edit')) {
+            map.addLayer({
+              id: 'zonas-line-edit',
+              type: 'line',
+              source: 'zonas-delivery-edit',
+              paint: {
+                'line-color': ['get', 'color'],
+                'line-width': [
+                  'case',
+                  ['boolean', ['feature-state', 'selected'], false],
+                  3,
+                  1.5,
+                ],
+                'line-opacity': 0.85,
+              },
+            });
+          }
+
+          const aplicarSeleccionEdit = () => {
+            const currentSelId = despachoEditZonaRef.current?.Zona_DeliveryId || despachoEditZonaRef.current?.id;
+            features.forEach((f) => {
+              try {
+                map.setFeatureState(
+                  { source: 'zonas-delivery-edit', id: f.id },
+                  { selected: String(currentSelId) === String(f.properties.zonaId) }
+                );
+              } catch {}
+            });
+          };
+          map._aplicarSeleccionZona = aplicarSeleccionEdit;
+          aplicarSeleccionEdit();
+
+          // Clic sobre polígono en mapa del modal
+          map.on('click', 'zonas-fill-edit', (e) => {
+            if (e.features && e.features[0]) {
+              const clickedId = e.features[0].properties.zonaId;
+              const found = (zonasDeliveryList || []).find(z => (z.Zona_DeliveryId || z.id) === clickedId);
+              if (found) {
+                setDespachoEditZona(found);
+                setDespachoEditZonaError(null);
+                customerMarker.setLngLat(e.lngLat);
+                actualizarUbicacionModal(e.lngLat.lng, e.lngLat.lat);
+                aplicarSeleccionEdit();
+              }
+            }
+          });
+
+          map.resize();
+          setTimeout(() => map.resize(), 100);
+          setTimeout(() => map.resize(), 300);
+          setTimeout(() => map.resize(), 600);
+        } catch (err) {
+          console.warn('Error loading polygons on edit modal map:', err);
+        }
+      });
+
+      editDespachoMapRef.current = map;
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      if (editDespachoMapRef.current) {
+        editDespachoMapRef.current.remove();
+        editDespachoMapRef.current = null;
+      }
+    };
+  }, [showModalEditarDespacho, despachoEditEsDelivery]);
+
+  // La dirección de entrega es el domicilio marcado en el mapa y se digita
+  // manualmente. NUNCA se copia la dirección fiscal del cliente.
+  // Fallback: si el campo está vacío al elegir cliente, se sugiere su
+  // dirección fiscal como punto de partida (se reemplaza al mover el pin).
+  useEffect(() => {
+    if (clienteSeleccionado?.direccion && !direccionEntregaRef.current && clienteSeleccionado.direccion !== 'Venta en Mostrador') {
+      setDireccionEntrega(clienteSeleccionado.direccion);
+    }
+  }, [clienteSeleccionado]);
+
+  // ----------------------------------------------------
   // CÁLCULOS TOTALES DEL PEDIDO
   // ----------------------------------------------------
   const subtotalNeto = productosPedido.reduce((sum, item) => sum + (item.subtotal || 0), 0);
   const igvCalculado = parseFloat((subtotalNeto * 0.18).toFixed(2));
-  const totalGeneral = parseFloat((subtotalNeto + igvCalculado).toFixed(2));
+  const costoDeliveryCalculado = (esDelivery && zonaSeleccionada) ? parseFloat(zonaSeleccionada.tarifa || 0) : 0;
+  const totalGeneral = parseFloat((subtotalNeto + igvCalculado + costoDeliveryCalculado).toFixed(2));
   const totalUnidades = productosPedido.reduce((sum, item) => sum + (item.cantidad || 0), 0);
+  const esElegibleParaDelivery = subtotalNeto >= 100.00;
 
   // ----------------------------------------------------
   // REGISTRAR PEDIDO DE VENTA
@@ -946,6 +2000,39 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     if (productosPedido.length === 0) {
       sileo.warning('Debe agregar al menos un producto al pedido.');
       return;
+    }
+
+    if (esDelivery) {
+      if (subtotalNeto < 100.00) {
+        sileo.error(`El pedido requiere un subtotal mínimo de S/ 100.00 en productos para habilitar delivery. Subtotal actual: S/ ${subtotalNeto.toFixed(2)}`);
+        return;
+      }
+      if (!direccionEntrega.trim()) {
+        sileo.error('Debe indicar la dirección exacta de entrega a domicilio.');
+        return;
+      }
+
+      // Auto-alineación semántica y validación de seguridad
+      let zonaParaPayload = zonaSeleccionada;
+      const distDetectado = detectarDistritoEnTexto(direccionEntrega);
+      if (distDetectado && (!zonaSeleccionada || distDetectado.id !== zonaSeleccionada.id)) {
+        const zonaMatch = (zonasDeliveryList || []).find((z) => (z.id || z.Zona_DeliveryId) === distDetectado.id);
+        if (zonaMatch) {
+          zonaParaPayload = {
+            id: zonaMatch.id || zonaMatch.Zona_DeliveryId,
+            nombre: zonaMatch.nombre || zonaMatch.Zona_DeliveryNombre,
+            tarifa: parseFloat(zonaMatch.tarifa || zonaMatch.Zona_DeliveryTarifa || 0),
+            raw: zonaMatch,
+          };
+          setZonaSeleccionada(zonaParaPayload);
+          sileo.info(`Se sincronizó la zona con la dirección a ${distDetectado.nombre} (Tarifa: S/ ${zonaParaPayload.tarifa.toFixed(2)}).`);
+        }
+      }
+
+      if (!zonaParaPayload) {
+        sileo.error('Debe ubicar o seleccionar una zona de delivery válida en Trujillo.');
+        return;
+      }
     }
 
     isSubmittingRef.current = true;
@@ -974,11 +2061,29 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       const dispositivo = getDeviceType();
       const intentosCorreccion = correctionsCountRef.current || 0;
 
+      // Determinación final de zona de delivery: Máxima prioridad a la zona seleccionada en formulario/mapa
+      let zonaIdFinal = null;
+      if (esDelivery) {
+        if (zonaSeleccionada?.id) {
+          zonaIdFinal = zonaSeleccionada.id;
+        } else {
+          const distFinal = detectarDistritoEnTexto(direccionEntrega);
+          zonaIdFinal = distFinal?.id || null;
+        }
+      }
+
       const payload = {
         cliente_id: clienteSeleccionado.id,
         canal_id: canalSeleccionado || 'CNL-00001',
         acuerdo_comercial: acuerdoComercial.trim() || 'Contado Mostrador',
         origen_ia: esOrigenIa ? 'S' : 'N',
+        fecha_entrega: fechaEntrega || null,
+        es_delivery: esDelivery ? 'S' : 'N',
+        zona_delivery_id: zonaIdFinal,
+        direccion_entrega: esDelivery ? direccionEntrega.trim() : null,
+        referencia_entrega: esDelivery ? (referenciaEntrega.trim() || null) : null,
+        latitud: esDelivery && customerCoords ? customerCoords[1] : null,
+        longitud: esDelivery && customerCoords ? customerCoords[0] : null,
         detalles: productosPedido.map(item => ({
           producto_id: item.producto_id,
           cantidad: item.cantidad,
@@ -1023,6 +2128,12 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
           total: totalGeneral,
           subtotal: subtotalNeto,
           igv: igvCalculado,
+          es_delivery: esDelivery,
+          costo_delivery: costoDeliveryCalculado,
+          zona_delivery: zonaSeleccionada?.nombre,
+          direccion_entrega: direccionEntrega,
+          referencia_entrega: referenciaEntrega,
+          fecha_entrega: fechaEntrega,
           detalles: [...productosPedido],
           canal: (Array.isArray(canalesList) ? canalesList : []).find(c => c.Canal_pedidoId === canalSeleccionado)?.Canal_pedidoDescripcion || 'Tienda Presencial',
           acuerdo: acuerdoComercial,
@@ -1055,6 +2166,14 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         setClienteSeleccionado(null);
         setSearchCliente('');
         setAcuerdoComercial('Contado Mostrador');
+        setEsDelivery(false);
+        setZonaSeleccionada(null);
+        setCustomerCoords(null);
+        setDireccionEntrega('');
+        setReferenciaEntrega('');
+        setSugerenciaMapa(null);
+        setZonaError(null);
+        setFechaEntrega(new Date().toISOString().split('T')[0]);
         
         // Reset de telemetría para la próxima orden
         formStartTimeRef.current = Date.now();
@@ -1233,7 +2352,28 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     mensaje += `----------------------------------------\n`;
     mensaje += `*Subtotal:* S/ ${parseFloat(orden.subtotal || 0).toFixed(2)}\n`;
     mensaje += `*IGV (18%):* S/ ${parseFloat(orden.igv || 0).toFixed(2)}\n`;
+    if (esDeliveryOrden(orden)) {
+      mensaje += `*Costo Delivery:* S/ ${parseFloat(orden.costo_delivery || 0).toFixed(2)}\n`;
+    }
     mensaje += `*TOTAL A PAGAR:* S/ ${parseFloat(orden.total || 0).toFixed(2)}\n\n`;
+
+    if (esDeliveryOrden(orden)) {
+      mensaje += `*MODALIDAD: DELIVERY A DOMICILIO* 🛵\n`;
+      mensaje += `*Zona / Distrito:* ${getNombreZonaOrden(orden)}\n`;
+      mensaje += `*Dirección:* ${orden.direccion_entrega || 'No indicada'}\n`;
+      if (orden.referencia_entrega) {
+        mensaje += `*Referencia:* ${orden.referencia_entrega}\n`;
+      }
+      const lat = orden.latitud_entrega ?? orden.PedidoLatitudEntrega;
+      const lng = orden.longitud_entrega ?? orden.PedidoLongitudEntrega;
+      if (lat && lng) {
+        mensaje += `*📍 Ubicación GPS Google Maps:* https://www.google.com/maps/search/?api=1&query=${lat},${lng}\n`;
+      }
+      mensaje += `\n`;
+    } else {
+      mensaje += `*MODALIDAD: RECOJO EN TIENDA* 🏪\n\n`;
+    }
+
     mensaje += `*Estado:* ${orden.estado_texto || (orden.estado === 'C' ? 'Completada' : 'Pendiente')}\n`;
     mensaje += `¡Muchas gracias por su preferencia! 🛒✨`;
 
@@ -1255,6 +2395,198 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
   const ejecutarImpresion = () => {
     window.print();
+  };
+
+  // ----------------------------------------------------
+  // GESTIÓN DE DESPACHO Y FECHA (ÓRDENES PENDIENTES)
+  // ----------------------------------------------------
+  const esDeliveryOrden = (o) => Boolean(
+    o?.es_delivery === true ||
+    o?.es_delivery === 'S' ||
+    o?.es_delivery === 's' ||
+    Number(o?.costo_delivery) > 0 ||
+    Boolean(o?.zona_delivery_id)
+  );
+
+  const getNombreZonaOrden = (o) => {
+    if (o?.zona_delivery?.nombre) return o.zona_delivery.nombre;
+    if (o?.zona_delivery?.Zona_DeliveryNombre) return o.zona_delivery.Zona_DeliveryNombre;
+    const currentId = o?.zona_delivery_id || o?.zona_delivery?.id;
+    if (currentId && Array.isArray(zonasDeliveryList)) {
+      const match = zonasDeliveryList.find(z => (z.Zona_DeliveryId || z.id) === currentId);
+      if (match) return match.Zona_DeliveryNombre || match.nombre;
+    }
+    return 'Trujillo';
+  };
+
+  const abrirModalEditarDespacho = (orden) => {
+    if (!orden) return;
+    setOrdenParaEditarDespacho(orden);
+
+    // Fecha de entrega
+    let fechaVal = '';
+    if (orden.fecha_entrega) {
+      fechaVal = orden.fecha_entrega.substring(0, 10);
+    } else {
+      fechaVal = new Date().toISOString().split('T')[0];
+    }
+    setDespachoEditFecha(fechaVal);
+
+    // Es delivery
+    const esDeliv = esDeliveryOrden(orden);
+    setDespachoEditEsDelivery(esDeliv);
+
+    // Zona de delivery
+    const currentZonaId = orden.zona_delivery_id || orden.zona_delivery?.id || orden.zona_delivery?.Zona_DeliveryId;
+    const zonaEncontrada = zonasDeliveryList.find(z => (z.Zona_DeliveryId || z.id) === currentZonaId) || orden.zona_delivery || null;
+    setDespachoEditZona(zonaEncontrada);
+
+    // Coordenadas iniciales para el mapa
+    let initCoords = null;
+    const ordenLat = orden.latitud_entrega ?? orden.PedidoLatitudEntrega ?? null;
+    const ordenLng = orden.longitud_entrega ?? orden.PedidoLongitudEntrega ?? null;
+    if (ordenLat && ordenLng && !isNaN(Number(ordenLat)) && !isNaN(Number(ordenLng))) {
+      initCoords = [Number(Number(ordenLng).toFixed(6)), Number(Number(ordenLat).toFixed(6))];
+    } else if (zonaEncontrada) {
+      const rawGeo = zonaEncontrada.poligono_geojson || zonaEncontrada.Zona_DeliveryPoligonoGeoJSON;
+      if (rawGeo) {
+        try {
+          const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+          const coords = parsed.geometry ? parsed.geometry.coordinates[0] : parsed.coordinates?.[0];
+          if (coords && coords.length > 0) {
+            const sumLng = coords.reduce((acc, c) => acc + c[0], 0);
+            const sumLat = coords.reduce((acc, c) => acc + c[1], 0);
+            initCoords = [Number((sumLng / coords.length).toFixed(6)), Number((sumLat / coords.length).toFixed(6))];
+          }
+        } catch {}
+      }
+    }
+    if (!initCoords) {
+      const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
+      const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
+      initCoords = [storeLng, storeLat];
+    }
+    setDespachoEditCoords(initCoords);
+    setDespachoEditZonaError(null);
+
+    // Dirección y referencia: solo la congelada en el pedido, nunca la fiscal del cliente
+    setDespachoEditDireccion(orden.direccion_entrega || '');
+    setDespachoEditReferencia(orden.referencia_entrega || '');
+
+    setShowModalEditarDespacho(true);
+  };
+
+  const handleCambiarDistritoEditModal = (zonaId) => {
+    const encontrada = (zonasDeliveryList || []).find(z => (z.Zona_DeliveryId || z.id) === zonaId) || null;
+    setDespachoEditZona(encontrada);
+    setDespachoEditZonaError(null);
+
+    if (encontrada) {
+      const rawGeo = encontrada.poligono_geojson || encontrada.Zona_DeliveryPoligonoGeoJSON;
+      if (rawGeo) {
+        try {
+          const parsed = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+          const coords = parsed.geometry ? parsed.geometry.coordinates[0] : parsed.coordinates?.[0];
+          if (coords && coords.length > 0) {
+            const sumLng = coords.reduce((acc, c) => acc + c[0], 0);
+            const sumLat = coords.reduce((acc, c) => acc + c[1], 0);
+            const avgLng = Number((sumLng / coords.length).toFixed(6));
+            const avgLat = Number((sumLat / coords.length).toFixed(6));
+            setDespachoEditCoords([avgLng, avgLat]);
+            if (editDespachoCustomerMarkerRef.current) {
+              editDespachoCustomerMarkerRef.current.setLngLat([avgLng, avgLat]);
+            }
+            if (editDespachoMapRef.current) {
+              editDespachoMapRef.current.flyTo({ center: [avgLng, avgLat], zoom: 13.5 });
+            }
+          }
+        } catch (e) {
+          console.warn('Error centrando mapa de edición:', e);
+        }
+      }
+    }
+  };
+
+  const handleGuardarEditarDespacho = async () => {
+    if (!ordenParaEditarDespacho) return;
+
+    if (!despachoEditFecha) {
+      sileo.warning('Por favor especifica una fecha de entrega.');
+      return;
+    }
+
+    const hoyStr = new Date().toISOString().split('T')[0];
+    if (despachoEditFecha < hoyStr) {
+      sileo.warning('La fecha de entrega no puede ser anterior al día de hoy.');
+      return;
+    }
+
+    const subtotalProd = parseFloat(ordenParaEditarDespacho.subtotal || 0);
+    const totalSinDelivery = parseFloat(ordenParaEditarDespacho.total || 0) - parseFloat(ordenParaEditarDespacho.costo_delivery || 0);
+    const baseProductos = subtotalProd > 0 ? subtotalProd : totalSinDelivery;
+
+    if (despachoEditEsDelivery) {
+      if (baseProductos < 100) {
+        sileo.warning(`El pedido tiene un subtotal de S/ ${baseProductos.toFixed(2)}, pero el delivery exige un mínimo de S/ 100.00.`);
+        return;
+      }
+
+      if (!despachoEditDireccion.trim()) {
+        sileo.warning('Por favor ingresa la dirección exacta de entrega.');
+        return;
+      }
+
+      // Determinación de zona final: La selección explícita del usuario o la detectada en el mapa TIENE MÁXIMA PRIORIDAD
+      let zonaFinalId = null;
+      if (despachoEditZona) {
+        zonaFinalId = despachoEditZona.Zona_DeliveryId || despachoEditZona.id || null;
+      } else {
+        const distDetectado = detectarDistritoEnTexto(despachoEditDireccion);
+        zonaFinalId = distDetectado?.id || null;
+      }
+
+      if (!zonaFinalId) {
+        sileo.warning('Por favor selecciona la zona / distrito de delivery.');
+        return;
+      }
+    }
+
+    setIsGuardandoDespacho(true);
+    try {
+      const zonaIdFinal = despachoEditEsDelivery
+        ? (despachoEditZona?.Zona_DeliveryId || despachoEditZona?.id || detectarDistritoEnTexto(despachoEditDireccion)?.id || null)
+        : null;
+
+      const payload = {
+        fecha_entrega: despachoEditFecha,
+        es_delivery: despachoEditEsDelivery ? 'S' : 'N',
+        zona_delivery_id: zonaIdFinal,
+        direccion_entrega: despachoEditEsDelivery ? despachoEditDireccion.trim() : null,
+        referencia_entrega: despachoEditEsDelivery ? (despachoEditReferencia.trim() || null) : null,
+        latitud: despachoEditEsDelivery && despachoEditCoords ? despachoEditCoords[1] : null,
+        longitud: despachoEditEsDelivery && despachoEditCoords ? despachoEditCoords[0] : null,
+      };
+
+      const res = await api.pedidosCliente.actualizar(ordenParaEditarDespacho.id, payload);
+      if (res?.success) {
+        sileo.success(`Despacho de la orden ${ordenParaEditarDespacho.id} actualizado correctamente.`);
+        setShowModalEditarDespacho(false);
+        setOrdenParaEditarDespacho(null);
+        if (showModalDetalle) {
+          setShowModalDetalle(false);
+        }
+        cargarHistorial(paginacion.current_page);
+        cargarEstadisticas();
+      } else {
+        sileo.error(res?.message || 'No se pudo actualizar el despacho de la orden.');
+      }
+    } catch (err) {
+      console.error('Error al actualizar despacho:', err);
+      const msg = err.response?.data?.message || err.message || 'Error al actualizar el despacho.';
+      sileo.error(msg);
+    } finally {
+      setIsGuardandoDespacho(false);
+    }
   };
 
   const listaClientesSegura = Array.isArray(clientesList) ? clientesList : [];
@@ -1482,52 +2814,404 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                     Canal de Pedido / Origen:
                   </label>
-                  <select
+                  <StyledSelect
                     value={canalSeleccionado}
-                    onChange={(e) => setCanalSeleccionado(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                  >
-                    {(Array.isArray(canalesList) ? canalesList : []).map(c => (
-                      <option key={c.Canal_pedidoId} value={c.Canal_pedidoId}>
-                        {c.Canal_pedidoDescripcion} ({c.Canal_pedidoId})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setCanalSeleccionado(v)}
+                    options={(Array.isArray(canalesList) ? canalesList : []).map(c => ({
+                      value: c.Canal_pedidoId,
+                      label: `${c.Canal_pedidoDescripcion} (${c.Canal_pedidoId})`
+                    }))}
+                    icon={<Store className="w-4 h-4 text-slate-400" />}
+                    placeholder="Seleccionar canal..."
+                    searchable
+                    panelWidth={280}
+                    size="form"
+                    ariaLabel="Canal de Pedido / Origen"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                     Condición / Acuerdo Comercial:
                   </label>
-                  <select
+                  <StyledSelect
                     value={acuerdoComercial}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       paymentConfirmedTimeRef.current = Date.now();
-                      setAcuerdoComercial(e.target.value);
+                      setAcuerdoComercial(v);
                     }}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                  >
-                    <option value="Contado Mostrador">Contado Mostrador</option>
-                    <option value="Contado Efectivo">Contado Efectivo</option>
-                    <option value="Yape / Plin">Yape / Plin</option>
-                    <option value="Transferencia Bancaria">Transferencia Bancaria (BCP / BBVA / Interbank)</option>
-                    <option value="Contra Entrega">Contra Entrega (Efectivo al recibir)</option>
-                    <option value="Crédito 7 días">Crédito 7 días</option>
-                    <option value="Crédito 15 días">Crédito 15 días</option>
-                    <option value="Crédito 30 días">Crédito 30 días</option>
-                    <option value="Especial / Por Definir">Especial / Por Definir</option>
-                  </select>
+                    options={[
+                      { value: 'Contado Mostrador', label: 'Contado Mostrador' },
+                      { value: 'Contado Efectivo', label: 'Contado Efectivo' },
+                      { value: 'Yape / Plin', label: 'Yape / Plin' },
+                      { value: 'Transferencia Bancaria', label: 'Transferencia Bancaria (BCP / BBVA / Interbank)' },
+                      { value: 'Contra Entrega', label: 'Contra Entrega (Efectivo al recibir)' },
+                      { value: 'Crédito 7 días', label: 'Crédito 7 días' },
+                      { value: 'Crédito 15 días', label: 'Crédito 15 días' },
+                      { value: 'Crédito 30 días', label: 'Crédito 30 días' },
+                      { value: 'Especial / Por Definir', label: 'Especial / Por Definir' }
+                    ]}
+                    icon={<DollarSign className="w-4 h-4 text-slate-400" />}
+                    placeholder="Seleccionar condición..."
+                    searchable
+                    panelWidth={280}
+                    size="form"
+                    ariaLabel="Condición / Acuerdo Comercial"
+                  />
                 </div>
               </div>
             </div>
 
-            {/* 2. BUSCADOR & AGREGADO DE PRODUCTOS */}
+            {/* 2. DESPACHO, MODALIDAD DE ENTREGA Y FECHA PROGRAMADA */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                  <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-blue-600" />
+                    2. Modalidad de Entrega y Despacho
+                  </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium">Fecha de Entrega:</span>
+                  <StyledDatePicker
+                    value={fechaEntrega}
+                    onChange={(v) => setFechaEntrega(v)}
+                    min={new Date().toISOString().split('T')[0]}
+                    ariaLabel="Fecha de Entrega"
+                  />
+                </div>
+              </div>
+
+              {/* Selector de Modalidad: Recojo vs Delivery */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {/* Opción A: Recojo en Tienda */}
+                <div
+                  onClick={() => setEsDelivery(false)}
+                  className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between gap-2 ${
+                    !esDelivery
+                      ? 'border-emerald-500 bg-emerald-50/40 text-emerald-950 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`p-2 rounded-lg ${!esDelivery ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <Store className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs">Recojo en Tienda</h4>
+                        <p className="text-[11px] text-slate-500">Retiro directo en mostrador</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                      Gratis (S/ 0.00)
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Dirección: {datosEmpresa?.EmpresaDireccion || 'Trujillo Centro'}
+                  </p>
+                </div>
+
+                {/* Opción B: Entrega a Domicilio (Delivery) */}
+                <div
+                  onClick={() => {
+                    if (!esElegibleParaDelivery && !esDelivery) {
+                      sileo.warning(`El servicio de delivery requiere una compra mínima de S/ 100.00 en productos. Subtotal actual: S/ ${subtotalNeto.toFixed(2)}`);
+                      return;
+                    }
+                    setEsDelivery(true);
+                  }}
+                  className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between gap-2 ${
+                    esDelivery
+                      ? 'border-blue-600 bg-blue-50/40 text-blue-950 shadow-xs'
+                      : esElegibleParaDelivery
+                      ? 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                      : 'border-slate-200 bg-slate-50/70 text-slate-400 opacity-90'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`p-2 rounded-lg ${esDelivery ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <Truck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs">Entrega a Domicilio (Delivery)</h4>
+                        <p className="text-[11px] text-slate-500">Despacho en distritos de Trujillo</p>
+                      </div>
+                    </div>
+                    {esElegibleParaDelivery ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                        {zonaSeleccionada ? `S/ ${zonaSeleccionada.tarifa.toFixed(2)}` : 'Tarifa según zona'}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                        Min. S/ 100
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-1">
+                    {esElegibleParaDelivery ? (
+                      <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        Califica para delivery (Subtotal S/ {subtotalNeto.toFixed(2)} ≥ S/ 100.00)
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-amber-600 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Faltan S/ {(100 - subtotalNeto).toFixed(2)} en productos para habilitar delivery
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Si está activo el Delivery: Mapa Mapbox y controles de zona */}
+              {esDelivery && (
+                <div className="pt-2 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
+                  {/* Selector rápido por Distrito y Badge de Estado */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Distrito / Zona Asignada:
+                      </label>
+                      <StyledSelect
+                        value={zonaSeleccionada?.id || ''}
+                        onChange={(v) => handleSeleccionarDistritoManual(v)}
+                        options={[
+                          { value: '', label: '-- Seleccionar o detectar en mapa --' },
+                          ...(zonasDeliveryList || []).map((z) => ({
+                            value: z.Zona_DeliveryId || z.id,
+                            label: `${z.Zona_DeliveryNombre || z.nombre} (Tarifa: S/ ${parseFloat(z.Zona_DeliveryTarifa || z.tarifa || 0).toFixed(2)})`
+                          }))
+                        ]}
+                        icon={<MapPin className="w-4 h-4 text-slate-400" />}
+                        placeholder="Seleccionar o detectar en mapa..."
+                        searchable
+                        panelWidth={280}
+                        size="form"
+                        ariaLabel="Distrito / Zona Asignada"
+                      />
+                    </div>
+
+                    {/* Tarifa Detectada */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Estado de Detección Geográfica:
+                      </label>
+                      {zonaSeleccionada ? (
+                        <div className="px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl flex items-center justify-between text-xs">
+                          <span className="font-semibold flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                            {zonaSeleccionada.nombre}
+                          </span>
+                          <span className="font-bold bg-blue-600 text-white px-2 py-0.5 rounded text-[11px]">
+                            + S/ {zonaSeleccionada.tarifa.toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="px-3.5 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl flex items-center gap-1.5 text-xs">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>{zonaError || 'Arrastre el pin azul en el mapa para ubicar el destino.'}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Buscador de Dirección Mapbox */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Búsqueda Rápida de Dirección / Lugar en Trujillo:
+                    </label>
+                    <BuscadorDireccionMapbox
+                      onSelectUbicacion={handleSelectUbicacionEnFormulario}
+                      placeholder="Buscar por calle o lugar (ej. Li-1084 Laredo, Av. Larco 1450, Urb. La Merced...)"
+                    />
+                  </div>
+
+                  {/* Contenedor del Mapa Mapbox GL */}
+                  <div className="relative">
+                    <div
+                      ref={deliveryMapContainerRef}
+                      className="w-full h-64 rounded-xl border border-slate-200 overflow-hidden shadow-2xs"
+                    />
+                    <div className="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-slate-200 text-[10px] text-slate-600 shadow-xs pointer-events-none flex items-center gap-1.5">
+                      <Navigation className="w-3 h-3 text-blue-600" />
+                      <span>Arrastre el pin azul hasta el domicilio o haga clic en el mapa para posicionarlo</span>
+                    </div>
+                  </div>
+
+                  {/* Sugerencia de calle según el pin (opcional, un clic para usar) */}
+                  {sugerenciaMapa && (
+                    <div className="px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between gap-2 text-xs">
+                      <span className="text-sky-900 truncate">
+                        <span className="font-semibold">Sugerencia del mapa:</span> {sugerenciaMapa}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDireccionEntrega(sugerenciaMapa);
+                          setSugerenciaMapa(null);
+                        }}
+                        className="shrink-0 px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-[11px] font-semibold transition cursor-pointer"
+                      >
+                        Usar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Dirección y Referencia de Entrega */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Dirección de Entrega Exacta: <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={direccionEntrega}
+                          onChange={(e) => setDireccionEntrega(e.target.value)}
+                          placeholder="Domicilio de entrega. Ej. Av. Larco 1450, Urb. La Merced"
+                          className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleUbicarDireccionTexto}
+                          className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs"
+                          title="Ubicar esta dirección en el mapa"
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span>Ubicar</span>
+                        </button>
+                      </div>
+
+                      {/* Alerta de discrepancia semántica entre dirección escrita y zona asignada */}
+                      {(() => {
+                        const distritoDetectado = detectarDistritoEnTexto(direccionEntrega);
+                        const zonaActualId = zonaSeleccionada?.id || zonaSeleccionada?.Zona_DeliveryId;
+                        const zonaActualNom = (zonaSeleccionada?.nombre || zonaSeleccionada?.Zona_DeliveryNombre || '').toLowerCase();
+                        if (distritoDetectado && zonaSeleccionada && (zonaActualId !== distritoDetectado.id && !zonaActualNom.includes(distritoDetectado.nombre.toLowerCase()))) {
+                          return (
+                            <div className="mt-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center justify-between gap-2 animate-in fade-in">
+                              <div className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span className="text-[11px]">
+                                  La dirección menciona <strong>{distritoDetectado.nombre}</strong> pero la zona asignada es <strong>{zonaSeleccionada.nombre}</strong>.
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSeleccionarDistritoManual(distritoDetectado.id)}
+                                className="shrink-0 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                              >
+                                Corregir a {distritoDetectado.nombre}
+                              </button>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Referencia de Entrega (Opcional):
+                      </label>
+                      <input
+                        type="text"
+                        value={referenciaEntrega}
+                        onChange={(e) => setReferenciaEntrega(e.target.value)}
+                        placeholder="Ej. Casa verde de dos pisos, frente al parque"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coordenadas GPS del Punto de Entrega */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Compass className="w-3.5 h-3.5 text-blue-600" />
+                        Coordenadas GPS de Entrega (Latitud / Longitud):
+                      </span>
+                      {customerCoords && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${customerCoords[1]},${customerCoords[0]}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Probar en Google Maps
+                        </a>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] text-slate-500 font-medium mb-0.5">Latitud GPS:</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={customerCoords ? customerCoords[1] : ''}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val)) {
+                              const newCoords = [customerCoords ? customerCoords[0] : TRUJILLO_CENTER[0], val];
+                              setCustomerCoords(newCoords);
+                              if (deliveryCustomerMarkerRef.current) deliveryCustomerMarkerRef.current.setLngLat(newCoords);
+                              if (deliveryMapRef.current) deliveryMapRef.current.flyTo({ center: newCoords, zoom: 15 });
+                              const z = detectarZonaPorCoordenadas(newCoords[0], newCoords[1]);
+                              if (z) setZonaSeleccionada(z);
+                            }
+                          }}
+                          placeholder="Ej: -8.111816"
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 font-medium mb-0.5">Longitud GPS:</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={customerCoords ? customerCoords[0] : ''}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val)) {
+                              const newCoords = [val, customerCoords ? customerCoords[1] : TRUJILLO_CENTER[1]];
+                              setCustomerCoords(newCoords);
+                              if (deliveryCustomerMarkerRef.current) deliveryCustomerMarkerRef.current.setLngLat(newCoords);
+                              if (deliveryMapRef.current) deliveryMapRef.current.flyTo({ center: newCoords, zoom: 15 });
+                              const z = detectarZonaPorCoordenadas(newCoords[0], newCoords[1]);
+                              if (z) setZonaSeleccionada(z);
+                            }
+                          }}
+                          placeholder="Ej: -79.015388"
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      {customerCoords
+                        ? `📍 Coordenadas activas: ${customerCoords[1]}, ${customerCoords[0]} — Se registrarán en el pedido para la navegación del transportista al momento del despacho.`
+                        : 'Arrastre el pin azul en el mapa o pegue las coordenadas para fijar la ubicación exacta.'}
+                    </p>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 italic">
+                    * La dirección de entrega y la tarifa quedan congeladas en esta orden y no se alteran ante cambios futuros en la ficha del cliente.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 3. BUSCADOR & AGREGADO DE PRODUCTOS */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-                    2. Catálogo & Agregar Productos
+                    3. Catálogo & Agregar Productos
                   </h2>
                 </div>
                 <span className="text-xs text-slate-400">
@@ -1667,22 +3351,24 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                         Unidad de Medida / Presentación:
                       </label>
-                      <select
+                      <StyledSelect
                         value={unidadSeleccionada?.unidades_medidaId || ''}
-                        onChange={(e) => handleCambiarUnidad(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        {(productoEnSeleccion.unidades || []).map(u => {
+                        onChange={(v) => handleCambiarUnidad(v)}
+                        options={(productoEnSeleccion.unidades || []).map(u => {
                           const label = (u.descripcion || '').includes(`(${u.abreviatura})`)
                             ? u.descripcion
                             : `${u.descripcion} (${u.abreviatura})`;
-                          return (
-                            <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                              {label} - Factor: {u.factor_conversion}
-                            </option>
-                          );
+                          return {
+                            value: u.unidades_medidaId,
+                            label: `${label} - Factor: ${u.factor_conversion}`
+                          };
                         })}
-                      </select>
+                        icon={<Package className="w-4 h-4 text-slate-400" />}
+                        placeholder="Seleccionar unidad..."
+                        panelWidth={260}
+                        size="form"
+                        ariaLabel="Unidad de Medida / Presentación"
+                      />
                     </div>
 
                     {/* Cantidad */}
@@ -1767,13 +3453,13 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
               )}
             </div>
 
-            {/* 3. TABLA DE PRODUCTOS EN EL PEDIDO */}
+            {/* 4. TABLA DE PRODUCTOS EN EL PEDIDO */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                   <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-                    3. Detalle de Productos Solicitados ({productosPedido.length})
+                    4. Detalle de Productos Solicitados ({productosPedido.length})
                   </h2>
                 </div>
                 {productosPedido.length > 0 && (
@@ -1893,6 +3579,18 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-600">
+                  <span>Modalidad:</span>
+                  <span className={`font-bold ${esDelivery ? 'text-blue-700' : 'text-slate-700'}`}>
+                    {esDelivery ? `Delivery (${zonaSeleccionada?.nombre || 'Por detectar'})` : 'Recojo en Tienda'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Fecha Entrega:</span>
+                  <span className="font-semibold text-slate-700">
+                    {fechaEntrega || 'Hoy'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
                   <span>Total Ítems:</span>
                   <span className="font-bold text-slate-800">{productosPedido.length}</span>
                 </div>
@@ -1904,13 +3602,24 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
               <div className="border-t border-dashed border-slate-200 pt-4 space-y-2.5">
                 <div className="flex justify-between text-xs text-slate-600">
-                  <span>Subtotal Neto:</span>
+                  <span>Subtotal Productos:</span>
                   <span className="font-semibold text-slate-800">S/ {subtotalNeto.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-slate-600">
                   <span>IGV (18%):</span>
                   <span className="font-semibold text-slate-800">S/ {igvCalculado.toFixed(2)}</span>
                 </div>
+                {esDelivery && (
+                  <div className="flex justify-between text-xs text-blue-700 bg-blue-50 px-2 py-1.5 rounded-lg border border-blue-100">
+                    <span className="flex items-center gap-1 font-semibold">
+                      <Truck className="w-3.5 h-3.5 text-blue-600" />
+                      Flete Delivery ({zonaSeleccionada?.nombre || 'Zona'}):
+                    </span>
+                    <span className="font-bold">
+                      + S/ {costoDeliveryCalculado.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
                   <span>TOTAL A PAGAR:</span>
                   <span className="text-blue-600 text-lg">S/ {totalGeneral.toFixed(2)}</span>
@@ -2030,45 +3739,57 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
               {/* Filtro Estado */}
               <div>
-                <select
+                <StyledSelect
                   value={filtroEstado}
-                  onChange={(e) => setFiltroEstado(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">Todos los Estados</option>
-                  <option value="P">Pendientes (P)</option>
-                  <option value="C">Completadas (C)</option>
-                  <option value="A">Canceladas (A)</option>
-                </select>
+                  onChange={(v) => setFiltroEstado(v)}
+                  options={[
+                    { value: '', label: 'Todos los Estados' },
+                    { value: 'P', label: 'Pendientes (P)' },
+                    { value: 'C', label: 'Completadas (C)' },
+                    { value: 'A', label: 'Canceladas (A)' }
+                  ]}
+                  icon={<CheckCircle2 className="w-4 h-4 text-slate-400" />}
+                  placeholder="Todos los Estados"
+                  panelWidth={220}
+                  ariaLabel="Filtro por Estado"
+                />
               </div>
 
               {/* Filtro Canal */}
               <div>
-                <select
+                <StyledSelect
                   value={filtroCanal}
-                  onChange={(e) => setFiltroCanal(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">Todos los Canales</option>
-                  {(Array.isArray(canalesList) ? canalesList : []).map(c => (
-                    <option key={c.Canal_pedidoId} value={c.Canal_pedidoId}>
-                      {c.Canal_pedidoDescripcion}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setFiltroCanal(v)}
+                  options={[
+                    { value: '', label: 'Todos los Canales' },
+                    ...(Array.isArray(canalesList) ? canalesList : []).map(c => ({
+                      value: c.Canal_pedidoId,
+                      label: c.Canal_pedidoDescripcion
+                    }))
+                  ]}
+                  icon={<Store className="w-4 h-4 text-slate-400" />}
+                  placeholder="Todos los Canales"
+                  searchable
+                  panelWidth={240}
+                  ariaLabel="Filtro por Canal"
+                />
               </div>
 
               {/* Filtro Origen */}
               <div>
-                <select
+                <StyledSelect
                   value={filtroOrigen}
-                  onChange={(e) => setFiltroOrigen(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">Todos los Orígenes</option>
-                  <option value="S">🤖 Valencia AI</option>
-                  <option value="N">👤 Manual Convencional</option>
-                </select>
+                  onChange={(v) => setFiltroOrigen(v)}
+                  options={[
+                    { value: '', label: 'Todos los Orígenes' },
+                    { value: 'S', label: '🤖 Valencia AI' },
+                    { value: 'N', label: '👤 Manual Convencional' }
+                  ]}
+                  icon={<Bot className="w-4 h-4 text-slate-400" />}
+                  placeholder="Todos los Orígenes"
+                  panelWidth={240}
+                  ariaLabel="Filtro por Origen"
+                />
               </div>
 
               {/* Botón Refrescar y Filtro Rápido */}
@@ -2111,6 +3832,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                     <th className="py-3 px-4">Fecha / Hora</th>
                     <th className="py-3 px-4">Cliente</th>
                     <th className="py-3 px-4">Canal</th>
+                    <th className="py-3 px-4">Despacho</th>
                     <th className="py-3 px-4 text-center">Origen</th>
                     <th className="py-3 px-4 text-right">Total (S/)</th>
                     <th className="py-3 px-4 text-center">Estado</th>
@@ -2121,14 +3843,14 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                 <tbody className="divide-y divide-slate-100">
                   {isLoadingHistorial ? (
                     <tr>
-                      <td colSpan="9" className="py-12 text-center text-slate-400">
+                      <td colSpan="10" className="py-12 text-center text-slate-400">
                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
                         <span>Cargando órdenes de clientes...</span>
                       </td>
                     </tr>
                   ) : ordenesHistorial.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="py-12 text-center text-slate-400">
+                      <td colSpan="10" className="py-12 text-center text-slate-400">
                         No se encontraron órdenes registradas con los filtros seleccionados.
                       </td>
                     </tr>
@@ -2161,6 +3883,34 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                             <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-semibold">
                               {orden.canal?.descripcion || 'Tienda'}
                             </span>
+                          </td>
+
+                          {/* Despacho */}
+                          <td className="py-3.5 px-4">
+                            {esDeliveryOrden(orden) ? (
+                              <div>
+                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold inline-flex items-center gap-1 shadow-2xs">
+                                  <Truck className="w-3 h-3 text-blue-600" />
+                                  Delivery ({getNombreZonaOrden(orden)})
+                                </span>
+                                <p className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                                  <Calendar className="w-2.5 h-2.5 text-slate-400" />
+                                  {orden.fecha_entrega_formateada || (orden.fecha_entrega ? orden.fecha_entrega.split('T')[0] : 'Programada')}
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-medium inline-flex items-center gap-1">
+                                  <Store className="w-3 h-3 text-slate-500" />
+                                  Recojo en Tienda
+                                </span>
+                                {orden.fecha_entrega && (
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                    {orden.fecha_entrega_formateada || orden.fecha_entrega.split('T')[0]}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           {/* Origen */}
@@ -2271,6 +4021,18 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
+
+                              {/* Modificar Despacho si está pendiente */}
+                              {isPendiente && (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalEditarDespacho(orden)}
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                                  title="Modificar Despacho o Reprogramar Fecha"
+                                >
+                                  <Truck className="w-4 h-4" />
+                                </button>
+                              )}
 
                               {/* Completar si está pendiente */}
                               {isPendiente && (
@@ -2720,6 +4482,109 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                     </div>
                   </div>
 
+                  {/* Información de Despacho y Entrega */}
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 uppercase text-[11px] flex items-center gap-1.5">
+                        {esDeliveryOrden(ordenDetalle) ? (
+                          <>
+                            <Truck className="w-4 h-4 text-blue-600" />
+                            Entrega a Domicilio (Delivery)
+                          </>
+                        ) : (
+                          <>
+                            <Store className="w-4 h-4 text-emerald-600" />
+                            Recojo en Tienda Presencial
+                          </>
+                        )}
+                      </span>
+                      {ordenDetalle.estado === 'P' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowModalDetalle(false);
+                            abrirModalEditarDespacho(ordenDetalle);
+                          }}
+                          className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Modificar Despacho
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">FECHA PROGRAMADA:</span>
+                        <span className="font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          {ordenDetalle.fecha_entrega_formateada || (ordenDetalle.fecha_entrega ? ordenDetalle.fecha_entrega.split('T')[0] : 'No especificada')}
+                        </span>
+                      </div>
+                      {esDeliveryOrden(ordenDetalle) ? (
+                        <>
+                          <div>
+                            <span className="text-slate-400 block text-[10px]">ZONA / TARIFA FLETE:</span>
+                            <span className="font-bold text-blue-700 mt-0.5 block">
+                              {getNombreZonaOrden(ordenDetalle)} — S/ {parseFloat(ordenDetalle.costo_delivery || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="sm:col-span-2 bg-white p-3 rounded-lg border border-slate-200/80 space-y-2">
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">DIRECCIÓN DE ENTREGA (CONGELADA):</span>
+                              <p className="font-semibold text-slate-800 mt-0.5">{ordenDetalle.direccion_entrega || 'No indicada'}</p>
+                              {ordenDetalle.referencia_entrega && (
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  <strong>Ref:</strong> {ordenDetalle.referencia_entrega}
+                                </p>
+                              )}
+                            </div>
+                            {/* Navegación y Coordenadas GPS para la Salida del Repartidor */}
+                            {(ordenDetalle.latitud_entrega ?? ordenDetalle.PedidoLatitudEntrega) && (ordenDetalle.longitud_entrega ?? ordenDetalle.PedidoLongitudEntrega) && (
+                              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                                  <Compass className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                  <span className="font-mono text-[11px]">
+                                    GPS: <strong>{ordenDetalle.latitud_entrega ?? ordenDetalle.PedidoLatitudEntrega}</strong>, <strong>{ordenDetalle.longitud_entrega ?? ordenDetalle.PedidoLongitudEntrega}</strong>
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <a
+                                    href={ordenDetalle.link_google_maps || `https://www.google.com/maps/search/?api=1&query=${ordenDetalle.latitud_entrega ?? ordenDetalle.PedidoLatitudEntrega},${ordenDetalle.longitud_entrega ?? ordenDetalle.PedidoLongitudEntrega}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                                    title="Abrir destino en Google Maps"
+                                  >
+                                    <MapPin className="w-3 h-3 text-blue-600" />
+                                    Google Maps
+                                  </a>
+                                  <a
+                                    href={ordenDetalle.link_waze || `https://waze.com/ul?ll=${ordenDetalle.latitud_entrega ?? ordenDetalle.PedidoLatitudEntrega},${ordenDetalle.longitud_entrega ?? ordenDetalle.PedidoLongitudEntrega}&navigate=yes`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                                    title="Abrir destino en Waze"
+                                  >
+                                    <Navigation className="w-3 h-3 text-cyan-600" />
+                                    Waze
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">PUNTO DE RETIRO:</span>
+                          <span className="font-semibold text-slate-800 mt-0.5 block">
+                            Mostrador Principal — {datosEmpresa?.EmpresaDireccion || 'Trujillo Centro'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Detalle de Productos */}
                   <div>
                     <h4 className="font-bold text-slate-800 mb-2">Productos en la Orden:</h4>
@@ -2782,13 +4647,23 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   <div className="flex justify-end pt-2">
                     <div className="w-64 space-y-1.5 text-right">
                       <div className="flex justify-between text-slate-500">
-                        <span>Subtotal:</span>
-                        <span className="font-semibold text-slate-800">S/ {parseFloat(ordenDetalle.subtotal || 0).toFixed(2)}</span>
+                        <span>Subtotal Productos:</span>
+                        <span className="font-semibold text-slate-800">
+                          S/ {parseFloat(ordenDetalle.subtotal_productos ?? ordenDetalle.subtotal ?? 0).toFixed(2)}
+                        </span>
                       </div>
                       <div className="flex justify-between text-slate-500">
                         <span>IGV (18%):</span>
                         <span className="font-semibold text-slate-800">S/ {parseFloat(ordenDetalle.igv || 0).toFixed(2)}</span>
                       </div>
+                      {esDeliveryOrden(ordenDetalle) && (
+                        <div className="flex justify-between text-blue-700 font-medium">
+                          <span>Flete Delivery:</span>
+                          <span className="font-bold">
+                            S/ {parseFloat(ordenDetalle.costo_delivery || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm font-bold text-slate-900 pt-1 border-t border-slate-200">
                         <span>TOTAL GENERAL:</span>
                         <span className="text-blue-600">S/ {parseFloat(ordenDetalle.total || 0).toFixed(2)}</span>
@@ -2823,6 +4698,17 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
               <div className="flex items-center gap-2">
                 {ordenDetalle?.estado === 'P' && (
                   <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowModalDetalle(false);
+                        abrirModalEditarDespacho(ordenDetalle);
+                      }}
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Truck className="w-3.5 h-3.5" />
+                      <span>Editar Despacho</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => abrirModalCompletar(ordenDetalle)}
@@ -2877,18 +4763,23 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Causa Raíz de No Despacho (KPI PODE) *
               </label>
-              <select
+              <StyledSelect
                 value={causaFalloCancelacion}
-                onChange={(e) => setCausaFalloCancelacion(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-500 mb-2 font-medium"
-              >
-                <option value="RECHAZO_CLIENTE">Rechazo por Cliente (Desistió / Canceló)</option>
-                <option value="FALTA_STOCK">Falta de Stock Físico (Quiebre)</option>
-                <option value="ERROR_DIRECCION">Error en Dirección / Zona No Cubierta</option>
-                <option value="ERROR_FACTURACION">Error de Facturación / Precios</option>
-                <option value="PROBLEMA_LOGISTICO">Problema Logístico / Reparto</option>
-                <option value="OTRO">Otro Motivo Operativo</option>
-              </select>
+                onChange={(v) => setCausaFalloCancelacion(v)}
+                options={[
+                  { value: 'RECHAZO_CLIENTE', label: 'Rechazo por Cliente (Desistió / Canceló)' },
+                  { value: 'FALTA_STOCK', label: 'Falta de Stock Físico (Quiebre)' },
+                  { value: 'ERROR_DIRECCION', label: 'Error en Dirección / Zona No Cubierta' },
+                  { value: 'ERROR_FACTURACION', label: 'Error de Facturación / Precios' },
+                  { value: 'PROBLEMA_LOGISTICO', label: 'Problema Logístico / Reparto' },
+                  { value: 'OTRO', label: 'Otro Motivo Operativo' }
+                ]}
+                icon={<AlertCircle className="w-4 h-4 text-slate-400" />}
+                placeholder="Seleccionar causa..."
+                panelWidth={280}
+                size="form"
+                ariaLabel="Causa Raíz de No Despacho (KPI PODE)"
+              />
             </div>
 
             <div>
@@ -3014,6 +4905,400 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       )}
 
       {/* ---------------------------------------------------- */}
+      {/* MODAL 8: MODIFICAR DESPACHO / REPROGRAMAR ENTREGA     */}
+      {/* ---------------------------------------------------- */}
+      {showModalEditarDespacho && ordenParaEditarDespacho && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Cabecera */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5 text-blue-600">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">Modificar Despacho / Fecha</h3>
+                  <p className="text-[11px] text-slate-500">Orden de Pedido: <span className="font-semibold text-slate-700">{ordenParaEditarDespacho.id}</span></p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModalEditarDespacho(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Resumen Comercial */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Cliente</span>
+                <span className="font-semibold text-slate-800 truncate block">
+                  {ordenParaEditarDespacho.cliente?.nombre || ordenParaEditarDespacho.cliente?.ClienteNombre || 'Cliente General'}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Subtotal Productos</span>
+                <span className="font-bold text-blue-600">
+                  S/ {parseFloat(ordenParaEditarDespacho.subtotal || (ordenParaEditarDespacho.total - (ordenParaEditarDespacho.costo_delivery || 0))).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Fecha de Entrega */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-blue-600" />
+                Fecha de Entrega Solicitada *
+              </label>
+              <StyledDatePicker
+                value={despachoEditFecha}
+                onChange={(v) => setDespachoEditFecha(v)}
+                min={new Date().toISOString().split('T')[0]}
+                ariaLabel="Fecha de Entrega Solicitada"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                La fecha no puede ser anterior a hoy. Se recalculará la programación logística.
+              </p>
+            </div>
+
+            {/* Selector de Modalidad */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-2">
+                Modalidad de Entrega *
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDespachoEditEsDelivery(false)}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-2.5 ${
+                    !despachoEditEsDelivery
+                      ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-xs ring-1 ring-blue-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Store className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold">Recojo en Tienda</p>
+                    <p className="text-[10px] text-slate-500">Sin costo de flete (S/ 0.00)</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDespachoEditEsDelivery(true)}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-2.5 ${
+                    despachoEditEsDelivery
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-900 shadow-xs ring-1 ring-emerald-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold">Delivery a Domicilio</p>
+                    <p className="text-[10px] text-slate-500">Tarifa según distrito</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Opciones cuando es Delivery */}
+            {despachoEditEsDelivery && (
+              <div className="space-y-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 animate-in fade-in duration-150">
+                {/* Alerta de mínimo S/ 100 */}
+                {parseFloat(ordenParaEditarDespacho.subtotal || 0) < 100 && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      Atención: El subtotal de productos es menor a S/ 100.00. El servicio de delivery requiere alcanzar el importe mínimo.
+                    </span>
+                  </div>
+                )}
+
+                {/* Distrito / Zona y Estado de Detección */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Distrito / Zona de Entrega (Trujillo) *
+                    </label>
+                    <StyledSelect
+                      value={despachoEditZona?.Zona_DeliveryId || despachoEditZona?.id || ''}
+                      onChange={(v) => handleCambiarDistritoEditModal(v)}
+                      options={[
+                        { value: '', label: '-- Seleccione o detecte en mapa --' },
+                        ...zonasDeliveryList.map((z) => {
+                          const zid = z.Zona_DeliveryId || z.id;
+                          const nom = z.Zona_DeliveryNombre || z.nombre;
+                          const tar = parseFloat(z.Zona_DeliveryTarifa || z.tarifa || 0).toFixed(2);
+                          return {
+                            value: zid,
+                            label: `${nom} (Flete: S/ ${tar})`
+                          };
+                        })
+                      ]}
+                      icon={<MapPin className="w-4 h-4 text-slate-400" />}
+                      placeholder="Seleccione o detecte en mapa..."
+                      searchable
+                      panelWidth={280}
+                      size="form"
+                      ariaLabel="Distrito / Zona de Entrega (Trujillo)"
+                    />
+                  </div>
+
+                  <div>
+                    {despachoEditZona ? (
+                      <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center justify-between text-xs font-semibold">
+                        <span className="flex items-center gap-1.5 truncate">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          {despachoEditZona.Zona_DeliveryNombre || despachoEditZona.nombre}
+                        </span>
+                        <span className="text-emerald-700 font-bold shrink-0">
+                          S/ {parseFloat(despachoEditZona.Zona_DeliveryTarifa || despachoEditZona.tarifa || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span className="truncate">{despachoEditZonaError || 'Ubique el pin en el mapa'}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Buscador de Dirección en Modal */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Búsqueda de Nueva Dirección / Lugar en Trujillo:
+                  </label>
+                  <BuscadorDireccionMapbox
+                    onSelectUbicacion={handleSelectUbicacionEnEditModal}
+                    placeholder="Buscar calle o lugar (ej. Li-1084 Laredo, Av. Larco 1450...)"
+                  />
+                </div>
+
+                {/* Mapa Interactivo Mapbox GL para reubicar destino */}
+                <div className="relative">
+                  <div
+                    ref={editDespachoMapContainerRef}
+                    className="w-full h-52 rounded-xl border border-slate-200 overflow-hidden shadow-2xs"
+                  />
+                  <div className="absolute top-2 left-2 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-slate-200 text-[10px] text-slate-700 shadow-xs pointer-events-none flex items-center gap-1.5">
+                    <Navigation className="w-3 h-3 text-blue-600" />
+                    <span>Arrastre el pin azul o haga clic en un distrito de Trujillo para reasignar la zona</span>
+                  </div>
+                </div>
+
+                {/* Dirección Congelada */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Dirección Exacta de Entrega *
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={despachoEditDireccion}
+                      onChange={(e) => setDespachoEditDireccion(e.target.value)}
+                      placeholder="Ej: Av. España 1234, Urb. Centro"
+                      className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={handleUbicarDireccionTextoEditModal}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs"
+                      title="Geocodificar y ubicar en el mapa"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Ubicar</span>
+                    </button>
+                  </div>
+
+                  {/* Alerta de discrepancia semántica en Modal Edición */}
+                  {(() => {
+                    const distritoDetectado = detectarDistritoEnTexto(despachoEditDireccion);
+                    const zonaActualId = despachoEditZona?.Zona_DeliveryId || despachoEditZona?.id;
+                    const zonaActualNom = (despachoEditZona?.Zona_DeliveryNombre || despachoEditZona?.nombre || '').toLowerCase();
+                    if (distritoDetectado && despachoEditZona && (zonaActualId !== distritoDetectado.id && !zonaActualNom.includes(distritoDetectado.nombre.toLowerCase()))) {
+                      return (
+                        <div className="mt-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center justify-between gap-2 animate-in fade-in">
+                          <div className="flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span className="text-[11px]">
+                              La dirección menciona <strong>{distritoDetectado.nombre}</strong> pero la zona es <strong>{despachoEditZona.Zona_DeliveryNombre || despachoEditZona.nombre}</strong>.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCambiarDistritoEditModal(distritoDetectado.id)}
+                            className="shrink-0 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                          >
+                            Corregir a {distritoDetectado.nombre}
+                          </button>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                {/* Referencia */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Referencia de Entrega (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={despachoEditReferencia}
+                    onChange={(e) => setDespachoEditReferencia(e.target.value)}
+                    placeholder="Ej: Frente al parque, portón verde"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Coordenadas GPS del Despacho Editado */}
+                <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5 text-emerald-600" />
+                      Coordenadas GPS de Entrega (Latitud / Longitud):
+                    </span>
+                    {despachoEditCoords && (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${despachoEditCoords[1]},${despachoEditCoords[0]}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 hover:underline"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Ver en Google Maps
+                      </a>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-medium mb-0.5">Latitud GPS:</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={despachoEditCoords ? despachoEditCoords[1] : ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            const newC = [despachoEditCoords ? despachoEditCoords[0] : TRUJILLO_CENTER[0], val];
+                            setDespachoEditCoords(newC);
+                            if (editDespachoCustomerMarkerRef.current) editDespachoCustomerMarkerRef.current.setLngLat(newC);
+                            if (editDespachoMapRef.current) editDespachoMapRef.current.flyTo({ center: newC, zoom: 15 });
+                            const z = detectarZonaPorCoordenadas(newC[0], newC[1]);
+                            if (z) setDespachoEditZona(z);
+                          }
+                        }}
+                        placeholder="Ej: -8.111816"
+                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-medium mb-0.5">Longitud GPS:</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={despachoEditCoords ? despachoEditCoords[0] : ''}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            const newC = [val, despachoEditCoords ? despachoEditCoords[1] : TRUJILLO_CENTER[1]];
+                            setDespachoEditCoords(newC);
+                            if (editDespachoCustomerMarkerRef.current) editDespachoCustomerMarkerRef.current.setLngLat(newC);
+                            if (editDespachoMapRef.current) editDespachoMapRef.current.flyTo({ center: newC, zoom: 15 });
+                            const z = detectarZonaPorCoordenadas(newC[0], newC[1]);
+                            if (z) setDespachoEditZona(z);
+                          }
+                        }}
+                        placeholder="Ej: -79.015388"
+                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    {despachoEditCoords
+                      ? `📍 Coordenadas activas: ${despachoEditCoords[1]}, ${despachoEditCoords[0]} — Se actualizarán en la orden para guiar al repartidor.`
+                      : 'Ubique el pin en el mapa para capturar las coordenadas.'}
+                  </p>
+                </div>
+
+                {/* Desglose de Flete y Total proyectado */}
+                <div className="bg-emerald-50/70 p-2.5 rounded-lg border border-emerald-200/60 text-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-emerald-800 font-bold block">Flete de Delivery:</span>
+                    <span className="text-emerald-900 font-semibold">
+                      S/ {parseFloat(despachoEditZona?.Zona_DeliveryTarifa || despachoEditZona?.tarifa || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-emerald-800 font-bold block">Nuevo Total Estimado:</span>
+                    <span className="text-base font-extrabold text-emerald-700">
+                      S/ {(
+                        parseFloat(ordenParaEditarDespacho.subtotal || (ordenParaEditarDespacho.total - (ordenParaEditarDespacho.costo_delivery || 0))) +
+                        parseFloat(ordenParaEditarDespacho.igv || 0) +
+                        parseFloat(despachoEditZona?.Zona_DeliveryTarifa || despachoEditZona?.tarifa || 0)
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Si es recojo en tienda, preview de ahorro */}
+            {!despachoEditEsDelivery && (
+              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/60 text-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-blue-800 font-bold block">Modalidad:</span>
+                  <span className="text-blue-900 font-semibold">Recojo en Tienda Comercial Valencia</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-blue-800 font-bold block">Total Sin Flete:</span>
+                  <span className="text-base font-extrabold text-blue-700">
+                    S/ {(
+                      parseFloat(ordenParaEditarDespacho.total || 0) - parseFloat(ordenParaEditarDespacho.costo_delivery || 0)
+                    ).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Botones de acción */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowModalEditarDespacho(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isGuardandoDespacho}
+                onClick={handleGuardarEditarDespacho}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isGuardandoDespacho ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Guardando cambios...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Guardar Cambios</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
       {/* MODAL 7: FORMATO FÍSICO OFICIAL DE ORDEN IMPRIMIBLE   */}
       {/* ---------------------------------------------------- */}
       {showModalTicket && ticketOrden && (
@@ -3038,12 +5323,18 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
               minute: '2-digit',
               second: '2-digit',
             }).replace('.', ''),
+            es_delivery: ticketOrden.es_delivery,
+            direccion_entrega: ticketOrden.direccion_entrega,
+            referencia_entrega: ticketOrden.referencia_entrega,
+            zona_delivery: ticketOrden.zona_delivery?.nombre || ticketOrden.zona_delivery?.Zona_DeliveryNombre || (typeof ticketOrden.zona_delivery === 'string' ? ticketOrden.zona_delivery : null),
+            fecha_entrega: ticketOrden.fecha_entrega,
           }}
           entidad={{
             nombre: ticketOrden.cliente?.nombre || ticketOrden.cliente?.ClienteNombre || 'CLIENTE GENERAL',
             ruc: ticketOrden.cliente?.dni_ruc || ticketOrden.cliente?.ClienteRuc || ticketOrden.cliente?.ClienteDni || '---',
             direccion: ticketOrden.cliente?.direccion || ticketOrden.cliente?.ClienteDireccion || '---',
             responsable: ticketOrden.usuario_creador || ticketOrden.usuario_registro_nombre || ticketOrden.auditoria?.usuario_creacion_nombre || ticketOrden.usuario?.nombre || ticketOrden.usuario_creacion || undefined,
+            direccion_entrega: ticketOrden.direccion_entrega,
           }}
           items={(ticketOrden.detalles || []).map((det) => ({
             codigo: det.producto_id || det.ProductoId || det.codigo || det.id || '---',
@@ -3056,8 +5347,10 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
             peso: det.peso || det.ProductoPeso || 0,
           }))}
           totales={{
-            subtotal: ticketOrden.subtotal != null ? ticketOrden.subtotal : ((ticketOrden.total || 0) / 1.18),
+            subtotal: ticketOrden.subtotal != null ? ticketOrden.subtotal : (((ticketOrden.total || 0) - (ticketOrden.costo_delivery || 0)) / 1.18),
             igv: ticketOrden.igv != null ? ticketOrden.igv : undefined,
+            costo_delivery: ticketOrden.costo_delivery != null ? ticketOrden.costo_delivery : 0,
+            flete: ticketOrden.costo_delivery != null ? ticketOrden.costo_delivery : 0,
             totalGeneral: ticketOrden.total || 0,
           }}
           empresa={{

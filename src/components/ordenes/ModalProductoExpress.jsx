@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PackagePlus, X, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function ModalProductoExpress({ isOpen, onClose, onProductoCreado, proveedorId = null }) {
   const [nombre, setNombre] = useState('');
@@ -157,36 +158,38 @@ export default function ModalProductoExpress({ isOpen, onClose, onProductoCreado
               <label className="block font-semibold text-slate-700 mb-1">
                 Categoría <span className="text-rose-500">*</span>
               </label>
-              <select
+              <StyledSelect
                 value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
+                onChange={(v) => setCategoriaId(v)}
+                options={categorias.map((c) => ({
+                  value: c.Categoria_ProductoId || c.id,
+                  label: c.Categoria_ProductoNombre || c.nombre,
+                }))}
                 disabled={isLoadingCatalogos}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
-              >
-                {categorias.map((c) => (
-                  <option key={c.Categoria_ProductoId || c.id} value={c.Categoria_ProductoId || c.id}>
-                    {c.Categoria_ProductoNombre || c.nombre}
-                  </option>
-                ))}
-              </select>
+                searchable={categorias.length > 8}
+                size="form"
+                panelWidth={240}
+                ariaLabel="Categoría del producto"
+              />
             </div>
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
                 Unidad Base
               </label>
-              <select
+              <StyledSelect
                 value={unidadMedidaId}
-                onChange={(e) => setUnidadMedidaId(e.target.value)}
+                onChange={(v) => setUnidadMedidaId(v)}
+                options={unidades.map((u) => ({
+                  value: u.unidades_medidaId || u.id,
+                  label: `${u.unidades_medidaNombre || u.nombre || u.descripcion} (${u.unidades_medidaAbreviatura || u.abreviatura})`,
+                }))}
                 disabled={isLoadingCatalogos}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-hidden focus:border-emerald-500 cursor-pointer"
-              >
-                {unidades.map((u) => (
-                  <option key={u.unidades_medidaId || u.id} value={u.unidades_medidaId || u.id}>
-                    {u.unidades_medidaNombre || u.nombre || u.descripcion} ({u.unidades_medidaAbreviatura || u.abreviatura})
-                  </option>
-                ))}
-              </select>
+                searchable={unidades.length > 8}
+                size="form"
+                panelWidth={240}
+                ariaLabel="Unidad base del producto"
+              />
             </div>
           </div>
 

@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
 
 export default function GestionMovimientos() {
@@ -721,20 +723,23 @@ export default function GestionMovimientos() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Unidad de Medida <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  required
+                <StyledSelect
+                  size="form"
                   value={formData.unidadesMedidaId}
-                  onChange={handleUnidadChange}
+                  onChange={(v) => handleUnidadChange({ target: { value: v } })}
+                  options={[
+                    { value: '', label: '-- Seleccionar --' },
+                    ...(productoSeleccionado?.unidades || []).map((u) => ({
+                      value: u.unidades_medidaId,
+                      label: `${u.descripcion} (Factor: ${u.factor_conversion})`,
+                    })),
+                  ]}
                   disabled={!productoSeleccionado || productoSeleccionado?.unidades?.length === 0}
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white transition-colors cursor-pointer disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <option value="">-- Seleccionar --</option>
-                  {productoSeleccionado?.unidades?.map((u) => (
-                    <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                      {u.descripcion} (Factor: {u.factor_conversion})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Seleccionar --"
+                  searchable
+                  ariaLabel="Unidad de medida del movimiento"
+                  panelWidth={240}
+                />
               </div>
             </div>
 
@@ -810,11 +815,11 @@ export default function GestionMovimientos() {
                   Fecha (Aprox) de Salida
                 </label>
                 <div className="relative">
-                  <input
-                    type="date"
+                  <StyledDatePicker
                     value={formData.fechaAproxSalida}
-                    onChange={(e) => setFormData({ ...formData, fechaAproxSalida: e.target.value })}
-                    className="w-full px-3 py-2 text-xs bg-amber-50/50 border border-amber-200 rounded-xl focus:outline-hidden focus:border-amber-500 text-slate-800 font-medium"
+                    onChange={(v) => setFormData({ ...formData, fechaAproxSalida: v })}
+                    size="form"
+                    ariaLabel="Fecha aproximada de salida"
                   />
                 </div>
               </div>

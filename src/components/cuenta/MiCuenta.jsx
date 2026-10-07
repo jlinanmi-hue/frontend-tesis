@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function MiCuenta({ user, onUpdateUserData }) {
   const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'seguridad'
@@ -555,15 +556,18 @@ export default function MiCuenta({ user, onUpdateUserData }) {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Género / Sexo
                 </label>
-                <select
-                  name="EmpleadoSexo"
+                <StyledSelect
+                  size="form"
                   value={perfil.EmpleadoSexo}
-                  onChange={handleInputChange}
-                  className="w-full h-11 px-3.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/15 focus:border-blue-600 transition shadow-2xs cursor-pointer"
-                >
-                  <option value="M">Masculino</option>
-                  <option value="F">Femenino</option>
-                </select>
+                  onChange={(v) => handleInputChange({ target: { name: 'EmpleadoSexo', value: v } })}
+                  options={[
+                    { value: 'M', label: 'Masculino' },
+                    { value: 'F', label: 'Femenino' },
+                  ]}
+                  placeholder="Seleccionar..."
+                  panelWidth={240}
+                  ariaLabel="Género / Sexo"
+                />
               </div>
             </div>
 

@@ -6,6 +6,7 @@ import {
   HelpCircle, Truck, Info, X, Layers
 } from 'lucide-react';
 import api from '../../services/api';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 /**
  * PrediccionesCompra
@@ -493,21 +494,21 @@ export default function PrediccionesCompra({ onNavigateToOrdenCompra }) {
           />
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:flex-none">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <select
-              value={categoriaFiltro}
-              onChange={e => setCategoriaFiltro(e.target.value)}
-              className="pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 min-w-44 transition cursor-pointer"
-            >
-              <option value="">Todas las categorías</option>
-              {categorias.map(c => (
-                <option key={c.Categoria_ProductoId || c.id} value={c.Categoria_ProductoId || c.id}>
-                  {c.Categoria_ProductoDescripcion_categoria || c.descripcion || c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          <StyledSelect
+            value={categoriaFiltro}
+            onChange={(v) => setCategoriaFiltro(v)}
+            options={[
+              { value: '', label: 'Todas las categorías' },
+              ...categorias.map((c) => ({
+                value: c.Categoria_ProductoId || c.id,
+                label: c.Categoria_ProductoDescripcion_categoria || c.descripcion || c.nombre,
+              })),
+            ]}
+            icon={<Filter className="w-4 h-4 text-slate-400" />}
+            searchable
+            panelWidth={240}
+            ariaLabel="Filtrar por categoría"
+          />
           <button
             type="button"
             onClick={() => setSoloConSugerencia(v => !v)}

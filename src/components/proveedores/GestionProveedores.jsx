@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionProveedores() {
   // 1. Estados de datos
@@ -1131,18 +1132,20 @@ export default function GestionProveedores() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">Filas por página:</span>
-              <select
+              <StyledSelect
                 value={perPage}
-                onChange={(e) => {
-                  setPerPage(Number(e.target.value));
+                onChange={(v) => {
+                  setPerPage(Number(v));
                   setCurrentPage(1);
                 }}
-                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
+                options={[
+                  { value: 10, label: '10' },
+                  { value: 25, label: '25' },
+                  { value: 50, label: '50' },
+                ]}
+                panelWidth={200}
+                ariaLabel="Filas por página"
+              />
             </div>
 
             <div className="flex items-center gap-1">
@@ -1453,15 +1456,17 @@ export default function GestionProveedores() {
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   Estado Comercial
                 </label>
-                <select
-                  name="ProveedorEstado"
+                <StyledSelect
                   value={formData.ProveedorEstado}
-                  onChange={handleInputChange}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-blue-500 focus:bg-white transition"
-                >
-                  <option value="A">Activo (Habilitado para compras y recepciones)</option>
-                  <option value="I">Inactivo (Suspendido comercialmente)</option>
-                </select>
+                  onChange={(v) => handleInputChange({ target: { name: 'ProveedorEstado', value: v } })}
+                  options={[
+                    { value: 'A', label: 'Activo (Habilitado para compras y recepciones)' },
+                    { value: 'I', label: 'Inactivo (Suspendido comercialmente)' },
+                  ]}
+                  size="form"
+                  panelWidth={240}
+                  ariaLabel="Estado comercial del proveedor"
+                />
               </div>
 
               {/* Botones de Acción */}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Suspense, lazy } from 'react';
 import {
   Sparkles,
   X,
@@ -32,7 +32,9 @@ import {
   Cpu,
 } from 'lucide-react';
 import api from '../../services/api';
-import ChatChart from './ChatChart';
+// recharts (~300KB) solo se descarga cuando la IA devuelve un gráfico,
+// no en la carga inicial del chatbot
+const ChatChart = lazy(() => import('./ChatChart'));
 import ChatTable from './ChatTable';
 
 const MOTIVOS_DISLIKE = [
@@ -1673,7 +1675,13 @@ export default function ChatBotWidget() {
 
                   {/* === BI: Gráfico dinámico inline === */}
                   {msg.sender === 'bot' && msg.uiAction?.type === 'render_chart' && (
-                    <ChatChart chartData={msg.uiAction.chart} />
+                    <Suspense
+                      fallback={
+                        <div className="w-full h-[120px] bg-slate-50 border border-slate-200/80 rounded-xl mt-2 mb-1 animate-pulse" />
+                      }
+                    >
+                      <ChatChart chartData={msg.uiAction.chart} />
+                    </Suspense>
                   )}
 
                   {/* === BI: Tabla dinámica inline === */}

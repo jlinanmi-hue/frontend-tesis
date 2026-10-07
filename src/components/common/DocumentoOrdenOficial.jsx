@@ -310,7 +310,32 @@ export default function DocumentoOrdenOficial({
   const rawResponsable = entidad.responsable || entidad.vendedor || entidad.operario || metadata.responsable || activeUser.nombre || usuarioDoc;
   const responsableNombre = resolveNombreUsuario(rawResponsable, activeUser, personalList);
 
-  // 3. Normalización de totales y desglose exacto de IGV
+  // 3. Normalización de delivery y flete
+  const esDelivery = Boolean(
+    metadata.es_delivery === true ||
+    metadata.es_delivery === 'S' ||
+    metadata.esDelivery === true ||
+    metadata.esDelivery === 'S' ||
+    totales.costo_delivery > 0 ||
+    totales.flete > 0
+  );
+
+  const direccionEntregaCongelada = metadata.direccion_entrega || metadata.direccionEntrega || entidad.direccion_entrega || null;
+  const referenciaEntrega = metadata.referencia_entrega || metadata.referenciaEntrega || null;
+  const zonaDeliveryNombre = metadata.zona_delivery_nombre || metadata.zona_delivery?.nombre || (typeof metadata.zona_delivery === 'string' ? metadata.zona_delivery : null);
+  const fechaEntrega = metadata.fecha_entrega || metadata.fechaEntrega || null;
+  const latitudEntrega = metadata.latitud_entrega ?? metadata.latitud ?? metadata.PedidoLatitudEntrega ?? null;
+  const longitudEntrega = metadata.longitud_entrega ?? metadata.longitud ?? metadata.PedidoLongitudEntrega ?? null;
+
+  const costoDeliveryNum = Number(
+    totales.costo_delivery ??
+    totales.flete ??
+    totales.costoDelivery ??
+    metadata.costo_delivery ??
+    0
+  );
+
+  // 4. Normalización de totales y desglose exacto de IGV + Flete
   const sumItems = items.reduce((acc, it) => {
     const cant = Number(it.cantidad || 0);
     const prec = Number(it.precio || it.precio_unitario || it.costo_unitario || 0);
@@ -325,23 +350,24 @@ export default function DocumentoOrdenOficial({
   if (totales.totalGeneral != null && totales.subtotal != null) {
     subtotalNum = Number(totales.subtotal);
     totalGeneralNum = Number(totales.totalGeneral);
-    igvNum = totales.igv != null ? Number(totales.igv) : (totalGeneralNum - subtotalNum);
+    igvNum = totales.igv != null ? Number(totales.igv) : Math.max(0, totalGeneralNum - subtotalNum - costoDeliveryNum);
   } else if (totales.totalGeneral != null) {
     totalGeneralNum = Number(totales.totalGeneral);
-    subtotalNum = totales.subtotal != null ? Number(totales.subtotal) : (totalGeneralNum / 1.18);
-    igvNum = totales.igv != null ? Number(totales.igv) : (totalGeneralNum - subtotalNum);
+    subtotalNum = totales.subtotal != null ? Number(totales.subtotal) : ((totalGeneralNum - costoDeliveryNum) / 1.18);
+    igvNum = totales.igv != null ? Number(totales.igv) : Math.max(0, totalGeneralNum - subtotalNum - costoDeliveryNum);
   } else if (totales.subtotal != null) {
     subtotalNum = Number(totales.subtotal);
     igvNum = totales.igv != null ? Number(totales.igv) : (subtotalNum * 0.18);
-    totalGeneralNum = subtotalNum + igvNum;
+    totalGeneralNum = subtotalNum + igvNum + costoDeliveryNum;
   } else {
     subtotalNum = sumItems;
     igvNum = totales.igv != null ? Number(totales.igv) : (subtotalNum * 0.18);
-    totalGeneralNum = subtotalNum + igvNum;
+    totalGeneralNum = subtotalNum + igvNum + costoDeliveryNum;
   }
 
   const subtotalVal = subtotalNum.toFixed(2);
   const totalIgvVal = Math.max(0, igvNum).toFixed(2);
+  const costoDeliveryVal = costoDeliveryNum.toFixed(2);
   const totalGeneralVal = totalGeneralNum.toFixed(2);
 
   const handleImprimir = () => {
@@ -393,11 +419,42 @@ export default function DocumentoOrdenOficial({
               <span className="font-bold">Señores:</span> {entidadNombre}
             </p>
             <p className="leading-tight">
-              <span className="font-bold">R.U.C.:</span> {entidadRuc}
+              <span className="font-bold">R.U.C. / Doc:</span> {entidadRuc}
             </p>
+            {headerType !== 'ORDEN DE COMPRA' && (
+              <p className="leading-tight">
+                <span className="font-bold">Modalidad:</span>{' '}
+                {esDelivery ? (
+                  <span className="font-bold text-black uppercase">Entrega a Domicilio (Delivery)</span>
+                ) : (
+                  <span className="font-bold text-black uppercase">Recojo en Tienda</span>
+                )}
+              </p>
+            )}
             <p className="leading-tight">
-              <span className="font-bold">Dirección:</span> {entidadDireccion}
+              <span className="font-bold">Dirección:</span>{' '}
+              {esDelivery ? (
+                <span>
+                  {direccionEntregaCongelada || 'No indicada'}
+                  {zonaDeliveryNombre ? ` [Zona: ${zonaDeliveryNombre}]` : ''}
+                  {referenciaEntrega ? ` (Ref: ${referenciaEntrega})` : ''}
+                  {latitudEntrega && longitudEntrega && (
+                    <span className="block text-[10px] text-black font-mono mt-0.5 print:text-black">
+                      📍 GPS: {latitudEntrega}, {longitudEntrega} | <a href={`https://www.google.com/maps/search/?api=1&query=${latitudEntrega},${longitudEntrega}`} target="_blank" rel="noopener noreferrer" className="underline font-bold text-blue-700 print:text-black">Google Maps</a>
+                    </span>
+                  )}
+                </span>
+              ) : headerType === 'ORDEN DE COMPRA' ? (
+                entidadDireccion
+              ) : (
+                <span>Recojo en Tienda ({entidadDireccion || 'Local Comercial Valencia - Trujillo'})</span>
+              )}
             </p>
+            {fechaEntrega && headerType !== 'ORDEN DE COMPRA' && (
+              <p className="leading-tight">
+                <span className="font-bold">Fecha Entrega Programada:</span> {fechaEntrega}
+              </p>
+            )}
           </div>
 
           <div className="text-left sm:text-right space-y-0.5 shrink-0 pt-1 sm:pt-0">
@@ -473,14 +530,20 @@ export default function DocumentoOrdenOficial({
           <div className="flex justify-end pt-1 font-mono text-[11px] sm:text-[12px] text-black">
             <div className="text-right space-y-0.5 font-mono">
               <div className="flex justify-end gap-4">
-                <span className="font-bold">TOTAL:</span>
+                <span className="font-bold">SUBTOTAL:</span>
                 <span className="font-semibold w-24 text-right">{subtotalVal}</span>
               </div>
               <div className="flex justify-end gap-4">
                 <span className="font-bold">TOTAL IGV:</span>
                 <span className="font-semibold w-24 text-right">{totalIgvVal}</span>
               </div>
-              <div className="flex justify-end gap-4">
+              {esDelivery && costoDeliveryNum > 0 && (
+                <div className="flex justify-end gap-4 text-black">
+                  <span className="font-bold">FLETE DELIVERY:</span>
+                  <span className="font-semibold w-24 text-right">{costoDeliveryVal}</span>
+                </div>
+              )}
+              <div className="flex justify-end gap-4 border-t border-black pt-0.5 mt-0.5">
                 <span className="font-bold">TOTAL GENERAL:</span>
                 <span className="font-bold w-24 text-right">{totalGeneralVal}</span>
               </div>

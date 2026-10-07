@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   Save,
@@ -16,9 +16,20 @@ import {
   ShieldCheck,
   Clock,
   ExternalLink,
+  Navigation,
 } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { sileo } from 'sileo';
 import api from '../../services/api';
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+
+// Delimitación geográfica estricta: Solo provincia de Trujillo
+const TRUJILLO_BOUNDS = [
+  [-79.25, -8.28], // Suroeste [lng, lat]
+  [-78.70, -7.90]  // Noreste [lng, lat]
+];
 
 export default function GestionEmpresa() {
   const [formData, setFormData] = useState({
@@ -37,6 +48,9 @@ export default function GestionEmpresa() {
     EmpresaLogo: '',
     EmpresaMensajeTicket: '',
     EmpresaEstado: 'A',
+    EmpresaLatitud: -8.1116,
+    EmpresaLongitud: -79.0287,
+    EmpresaZonaReferencia: 'Trujillo Centro',
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +82,9 @@ export default function GestionEmpresa() {
           EmpresaLogo: data.EmpresaLogo || '',
           EmpresaMensajeTicket: data.EmpresaMensajeTicket || '',
           EmpresaEstado: data.EmpresaEstado || 'A',
+          EmpresaLatitud: data.EmpresaLatitud !== undefined && data.EmpresaLatitud !== null ? Number(data.EmpresaLatitud) : -8.1116,
+          EmpresaLongitud: data.EmpresaLongitud !== undefined && data.EmpresaLongitud !== null ? Number(data.EmpresaLongitud) : -79.0287,
+          EmpresaZonaReferencia: data.EmpresaZonaReferencia || 'Trujillo Centro',
         });
         if (data.EmpresaFechaModificacion || data.EmpresaFechaCreacion) {
           setUltimaModificacion(data.EmpresaFechaModificacion || data.EmpresaFechaCreacion);
@@ -81,9 +98,90 @@ export default function GestionEmpresa() {
     }
   };
 
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+
   useEffect(() => {
     cargarEmpresa();
   }, []);
+
+  useEffect(() => {
+    if (isLoading || !mapContainerRef.current) return;
+    if (mapRef.current) return;
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    const lat = Number(formData.EmpresaLatitud) || -8.1116;
+    const lng = Number(formData.EmpresaLongitud) || -79.0287;
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [lng, lat],
+      zoom: 13,
+      minZoom: 10,
+      maxZoom: 18,
+      maxBounds: TRUJILLO_BOUNDS
+    });
+
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    const marker = new mapboxgl.Marker({
+      draggable: true,
+      color: '#2563eb'
+    })
+      .setLngLat([lng, lat])
+      .addTo(map);
+
+    const updateCoords = (newLng, newLat) => {
+      // Validar si está dentro de Trujillo
+      const dentroDeTrujillo = newLng >= -79.25 && newLng <= -78.70 && newLat >= -8.28 && newLat <= -7.90;
+      if (!dentroDeTrujillo) {
+        sileo.warning('La sede de Comercial Valencia debe ubicarse dentro de la provincia de Trujillo.');
+        marker.setLngLat([lng, lat]);
+        return;
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        EmpresaLongitud: Number(newLng.toFixed(6)),
+        EmpresaLatitud: Number(newLat.toFixed(6))
+      }));
+    };
+
+    marker.on('dragend', () => {
+      const lngLat = marker.getLngLat();
+      updateCoords(lngLat.lng, lngLat.lat);
+    });
+
+    map.on('click', (e) => {
+      marker.setLngLat(e.lngLat);
+      updateCoords(e.lngLat.lng, e.lngLat.lat);
+    });
+
+    mapRef.current = map;
+    markerRef.current = marker;
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, [isLoading]);
+
+  const handleCoordChange = (field, value) => {
+    const num = parseFloat(value);
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (!isNaN(num) && markerRef.current && mapRef.current) {
+      const currentLngLat = markerRef.current.getLngLat();
+      const newLng = field === 'EmpresaLongitud' ? num : currentLngLat.lng;
+      const newLat = field === 'EmpresaLatitud' ? num : currentLngLat.lat;
+      markerRef.current.setLngLat([newLng, newLat]);
+      mapRef.current.flyTo({ center: [newLng, newLat] });
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -430,6 +528,74 @@ export default function GestionEmpresa() {
                   value={formData.EmpresaEmail}
                   onChange={handleChange}
                   placeholder="ventas@comercialvalencia.pe"
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none transition"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Tarjeta: Geolocalización del Establecimiento (Pin de Origen para Delivery) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-blue-600" />
+                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                  Geolocalización & Pin de Origen en Mapa (Delivery)
+                </h2>
+              </div>
+              <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                Punto de Partida Oficial
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Haz clic o arrastra el marcador azul en el mapa de Trujillo para fijar las coordenadas exactas de la tienda. Este punto se utiliza como referencia central para el cálculo y despacho de pedidos a domicilio.
+            </p>
+
+            <div
+              ref={mapContainerRef}
+              className="w-full h-72 rounded-xl border border-slate-200 overflow-hidden shadow-inner bg-slate-100"
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Latitud
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  name="EmpresaLatitud"
+                  value={formData.EmpresaLatitud ?? ''}
+                  onChange={(e) => handleCoordChange('EmpresaLatitud', e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none transition font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Longitud
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  name="EmpresaLongitud"
+                  value={formData.EmpresaLongitud ?? ''}
+                  onChange={(e) => handleCoordChange('EmpresaLongitud', e.target.value)}
+                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none transition font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Zona / Referencia de Ubicación
+                </label>
+                <input
+                  type="text"
+                  name="EmpresaZonaReferencia"
+                  value={formData.EmpresaZonaReferencia || ''}
+                  onChange={handleChange}
+                  placeholder="Ej. Trujillo Centro / Cerca a Plaza de Armas"
                   className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 focus:outline-none transition"
                 />
               </div>

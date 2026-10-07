@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionUbicaciones() {
   const [ubicaciones, setUbicaciones] = useState([]);
@@ -341,15 +342,18 @@ export default function GestionUbicaciones() {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estado Operativo
               </label>
-              <select
-                name="producto_ubi_estado"
+              <StyledSelect
+                size="form"
                 value={formData.producto_ubi_estado}
-                onChange={handleInputChange}
-                className="w-full px-3.5 py-2.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition outline-none cursor-pointer"
-              >
-                <option value="A">Activo (Disponible para asignar productos)</option>
-                <option value="I">Inactivo (Temporalmente fuera de servicio)</option>
-              </select>
+                onChange={(v) => handleInputChange({ target: { name: 'producto_ubi_estado', value: v } })}
+                options={[
+                  { value: 'A', label: 'Activo (Disponible para asignar productos)' },
+                  { value: 'I', label: 'Inactivo (Temporalmente fuera de servicio)' },
+                ]}
+                placeholder="Seleccionar estado..."
+                ariaLabel="Estado operativo de la ubicación"
+                panelWidth={240}
+              />
             </div>
 
             {/* Botones de Acción */}

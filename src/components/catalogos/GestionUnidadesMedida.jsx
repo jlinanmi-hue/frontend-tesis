@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionUnidadesMedida() {
   const [unidades, setUnidades] = useState([]);
@@ -369,15 +370,18 @@ export default function GestionUnidadesMedida() {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estado Operativo
               </label>
-              <select
-                name="unidades_medidaEstadoUnidades"
+              <StyledSelect
+                size="form"
                 value={formData.unidades_medidaEstadoUnidades}
-                onChange={handleInputChange}
-                className="w-full px-3.5 py-2.5 bg-slate-50 focus:bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition outline-none cursor-pointer"
-              >
-                <option value="A">Activo (Disponible para asignar a productos)</option>
-                <option value="I">Inactivo (No seleccionable en nuevos productos)</option>
-              </select>
+                onChange={(v) => handleInputChange({ target: { name: 'unidades_medidaEstadoUnidades', value: v } })}
+                options={[
+                  { value: 'A', label: 'Activo (Disponible para asignar a productos)' },
+                  { value: 'I', label: 'Inactivo (No seleccionable en nuevos productos)' },
+                ]}
+                placeholder="Seleccionar estado..."
+                ariaLabel="Estado operativo de la unidad de medida"
+                panelWidth={240}
+              />
             </div>
 
             {/* Botones de Acción */}

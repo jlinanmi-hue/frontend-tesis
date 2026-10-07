@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
 
 export default function GestionAjustesInventario() {
@@ -592,48 +594,46 @@ export default function GestionAjustesInventario() {
 
           {/* Filtro por Tipo */}
           <div>
-            <select
+            <StyledSelect
               value={filtroTipo}
-              onChange={(e) => {
-                setFiltroTipo(e.target.value);
+              onChange={(v) => {
+                setFiltroTipo(v);
                 setCurrentPage(1);
               }}
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
-            >
-              <option value="">Todos los tipos</option>
-              {tiposAjuste.map((t) => (
-                <option key={t.codigo} value={t.codigo}>
-                  {t.codigo}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'Todos los tipos' },
+                ...tiposAjuste.map((t) => ({ value: t.codigo, label: t.codigo })),
+              ]}
+              placeholder="Todos los tipos"
+              searchable
+              ariaLabel="Filtrar ajustes por tipo"
+              panelWidth={240}
+            />
           </div>
 
           {/* Fecha Desde */}
           <div>
-            <input
-              type="date"
+            <StyledDatePicker
               value={fechaDesde}
-              onChange={(e) => {
-                setFechaDesde(e.target.value);
+              onChange={(v) => {
+                setFechaDesde(v);
                 setCurrentPage(1);
               }}
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors"
-              title="Fecha inicial"
+              size="sm"
+              ariaLabel="Fecha inicial"
             />
           </div>
 
           {/* Fecha Hasta */}
           <div>
-            <input
-              type="date"
+            <StyledDatePicker
               value={fechaHasta}
-              onChange={(e) => {
-                setFechaHasta(e.target.value);
+              onChange={(v) => {
+                setFechaHasta(v);
                 setCurrentPage(1);
               }}
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors"
-              title="Fecha final"
+              size="sm"
+              ariaLabel="Fecha final"
             />
           </div>
         </div>
@@ -1038,18 +1038,16 @@ export default function GestionAjustesInventario() {
                   <label className="block font-semibold text-slate-700 mb-1">
                     Tipo de Ajuste / Causa <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    required
+                  <StyledSelect
+                    size="form"
                     value={formData.tipo}
-                    onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white text-slate-800 cursor-pointer font-medium"
-                  >
-                    {tiposAjuste.map((t) => (
-                      <option key={t.codigo} value={t.codigo}>
-                        {t.codigo}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, tipo: v })}
+                    options={tiposAjuste.map((t) => ({ value: t.codigo, label: t.codigo }))}
+                    placeholder="Seleccionar tipo..."
+                    searchable
+                    ariaLabel="Tipo de ajuste o causa"
+                    panelWidth={240}
+                  />
                   {tiposAjuste.find((t) => t.codigo === formData.tipo)?.descripcion && (
                     <p className="text-[10px] text-slate-400 mt-1">
                       {tiposAjuste.find((t) => t.codigo === formData.tipo)?.descripcion}

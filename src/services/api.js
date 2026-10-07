@@ -6,24 +6,38 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
 
 /**
- * Petición genérica con manejo de cabeceras JSON y respuestas estandarizadas
+ * Petición genérica con manejo de cabeceras JSON y respuestas estandarizadas.
+ * Soporta `options.signal` (AbortController del llamador) y `options.timeout`
+ * en ms (por defecto 25000) para no dejar peticiones colgadas en el dashboard.
  */
 async function request(endpoint, options = {}) {
+  const { timeout = 25000, signal: callerSignal, ...rest } = options;
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const headers = {
     'Accept': 'application/json',
-    ...(options.headers || {}),
+    ...(rest.headers || {}),
   };
 
-  if (!(options.body instanceof FormData)) {
+  if (!(rest.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
   const config = {
-    ...options,
+    ...rest,
     headers,
     credentials: 'omit', // o 'include' si se usan sesiones por cookies
+    signal: controller.signal,
   };
 
   if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -45,6 +59,14 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('La petición tardó demasiado y fue cancelada. Intenta de nuevo.');
+      timeoutError.status = 0;
+      timeoutError.timeout = true;
+      // Distingue cancelación del llamador (cambio de filtro) vs timeout real
+      timeoutError.aborted = callerSignal?.aborted === true;
+      throw timeoutError;
+    }
     if (!error.status) {
       // Error de red o servidor backend apagado
       const networkError = new Error('No se pudo conectar con el servidor backend (127.0.0.1:8000). Asegúrate de que "php artisan serve" esté ejecutándose.');
@@ -52,6 +74,8 @@ async function request(endpoint, options = {}) {
       throw networkError;
     }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -454,6 +478,29 @@ export const api = {
       request(`/ubicaciones/${id}/restore`, {
         method: 'POST',
       }),
+
+    // Zonas de Delivery
+    zonasDelivery: (params = {}) => {
+      const query = new URLSearchParams(params).toString();
+      return request(`/catalogos/zonas-delivery${query ? `?${query}` : ''}`);
+    },
+    zonasDeliveryActivas: () => request('/catalogos/zonas-delivery/activas'),
+    obtenerZonaDelivery: (id) => request(`/catalogos/zonas-delivery/${id}`),
+    crearZonaDelivery: (datos) =>
+      request('/catalogos/zonas-delivery', {
+        method: 'POST',
+        body: datos,
+      }),
+    actualizarZonaDelivery: (id, datos) =>
+      request(`/catalogos/zonas-delivery/${id}`, {
+        method: 'PUT',
+        body: datos,
+      }),
+    cambiarEstadoZonaDelivery: (id, estado) =>
+      request(`/catalogos/zonas-delivery/${id}/estado`, {
+        method: 'PATCH',
+        body: { estado },
+      }),
   },
 
   // 7. MÓDULO DE UBICACIONES DE ALMACÉN
@@ -815,6 +862,31 @@ export const api = {
       }),
   },
 
+  // 13.1. MÓDULO DE ZONAS DE DELIVERY
+  zonasDelivery: {
+    listar: (params = {}) => {
+      const query = new URLSearchParams(params).toString();
+      return request(`/catalogos/zonas-delivery${query ? `?${query}` : ''}`);
+    },
+    activas: () => request('/catalogos/zonas-delivery/activas'),
+    obtener: (id) => request(`/catalogos/zonas-delivery/${id}`),
+    crear: (datos) =>
+      request('/catalogos/zonas-delivery', {
+        method: 'POST',
+        body: datos,
+      }),
+    actualizar: (id, datos) =>
+      request(`/catalogos/zonas-delivery/${id}`, {
+        method: 'PUT',
+        body: datos,
+      }),
+    cambiarEstado: (id, estado) =>
+      request(`/catalogos/zonas-delivery/${id}/estado`, {
+        method: 'PATCH',
+        body: { estado },
+      }),
+  },
+
   // 14. MÓDULO DE INTELIGENCIA ARTIFICIAL (VALENCIA AI / CHATBOT)
   ai: {
     chat: (payload) => {
@@ -950,20 +1022,27 @@ export const api = {
 
   // 16. MÓDULO DE DASHBOARD Y MÉTRICAS DE TESIS
   dashboard: {
-    indicators: (params = {}) => {
-      const qs = new URLSearchParams(params).toString();
-      return request(`/dashboard/indicators${qs ? `?${qs}` : ''}`);
-    },
-    detail: (id, params = {}) => {
-      const qs = new URLSearchParams(params).toString();
-      return request(`/dashboard/indicator/${id}${qs ? `?${qs}` : ''}`);
-    },
-    compare: (params = {}) => {
+    ejecutivo: (params = {}, options = {}) => {
       const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
       );
       const qs = new URLSearchParams(cleanParams).toString();
-      return request(`/dashboard/compare${qs ? `?${qs}` : ''}`);
+      return request(`/dashboard/ejecutivo${qs ? `?${qs}` : ''}`, options);
+    },
+    indicators: (params = {}, options = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/dashboard/indicators${qs ? `?${qs}` : ''}`, options);
+    },
+    detail: (id, params = {}, options = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/dashboard/indicator/${id}${qs ? `?${qs}` : ''}`, options);
+    },
+    compare: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/compare${qs ? `?${qs}` : ''}`, options);
     },
     indicadores: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
@@ -973,6 +1052,40 @@ export const api = {
       const qs = new URLSearchParams(params).toString();
       return request(`/dashboard/tokens${qs ? `?${qs}` : ''}`);
     },
+  },
+
+  // 17. MÓDULO DE NOTIFICACIONES Y ALERTAS EN TIEMPO REAL
+  notificaciones: {
+    listar: (params = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/notificaciones${qs ? `?${qs}` : ''}`);
+    },
+    marcarLeida: (id) =>
+      request(`/notificaciones/${id}/leer`, {
+        method: 'PATCH',
+      }),
+    marcarTodas: (usuarioId = null) =>
+      request('/notificaciones/marcar-todas', {
+        method: 'POST',
+        body: { usuario_id: usuarioId },
+      }),
+    eliminar: (id) =>
+      request(`/notificaciones/${id}`, {
+        method: 'DELETE',
+      }),
+    eliminarTodas: (usuarioId = null) =>
+      request('/notificaciones', {
+        method: 'DELETE',
+        body: { usuario_id: usuarioId },
+      }),
+    test: (datos = {}) =>
+      request('/notificaciones/test', {
+        method: 'POST',
+        body: datos,
+      }),
   },
 };
 

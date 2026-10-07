@@ -19,7 +19,6 @@ import {
   Layers,
   X,
   Package,
-  FileCheck,
   Printer,
   Zap,
   History,
@@ -35,6 +34,8 @@ import ModalRecepcionMercaderia from './ModalRecepcionMercaderia';
 import ModalAnularRecepcion from './ModalAnularRecepcion';
 import ModalHistorialRecepcion from './ModalHistorialRecepcion';
 import ModalCompraRapida from './ModalCompraRapida';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
 
 export default function GestionOrdenesCompra({ 
   aiPrefill = null, 
@@ -130,6 +131,30 @@ export default function GestionOrdenesCompra({
   const [ordenIdParaHistorial, setOrdenIdParaHistorial] = useState(null);
 
   const [showModalCompraRapida, setShowModalCompraRapida] = useState(false);
+
+  // Menú "Más acciones" del encabezado + refs para el stepper por pasos
+  const [showMasAcciones, setShowMasAcciones] = useState(false);
+  const masAccionesRef = useRef(null);
+  const paso1Ref = useRef(null);
+  const paso2Ref = useRef(null);
+  const paso3AsideRef = useRef(null);
+  const paso3MobileRef = useRef(null);
+
+  const scrollAPaso = (...refs) => {
+    const el = refs.map((r) => r?.current).find((e) => e && e.offsetParent !== null);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Cerrar menú "Más acciones" al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutsideMas = (e) => {
+      if (masAccionesRef.current && !masAccionesRef.current.contains(e.target)) {
+        setShowMasAcciones(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideMas);
+    return () => document.removeEventListener('mousedown', handleClickOutsideMas);
+  }, []);
 
   useEffect(() => {
     if (api.empresa?.obtener) {
@@ -874,6 +899,92 @@ export default function GestionOrdenesCompra({
     }
   };
 
+  // Datos del stepper por pasos (Opción B: flujo guiado en una página)
+  const paso1Listo = productosSolicitados.length > 0;
+  const paso2Listo = Boolean(proveedorSeleccionado);
+  const pasosFlujo = [
+    { n: 1, titulo: 'Armar pedido', desc: 'Productos y cantidades', listo: paso1Listo, actual: !paso1Listo },
+    { n: 2, titulo: 'Proveedor y entrega', desc: 'Destino y fecha', listo: paso2Listo, actual: paso1Listo && !paso2Listo },
+    { n: 3, titulo: 'Revisar y guardar', desc: 'Confirmación final', listo: false, actual: paso1Listo && paso2Listo },
+  ];
+
+  const faltantesOrden = [
+    ...(!paso1Listo ? ['agregar productos'] : []),
+    ...(!paso2Listo ? ['elegir proveedor'] : []),
+  ];
+
+  const nombreProveedorResumen =
+    proveedorSeleccionado?.ProveedorRazonSocial || proveedorSeleccionado?.razon_social || null;
+
+  // Tarjeta de resumen + guardado (se muestra en el lateral en xl y debajo en móvil)
+  const renderResumenGuardar = () => (
+    <div className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-2xs space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center shrink-0">
+            3
+          </span>
+          <h2 className="text-sm font-bold text-slate-800">Revisar y Guardar</h2>
+        </div>
+        {paso1Listo && (
+          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+            {totalItemsSolicitados} prod. · {totalUnidadesSolicitadas} und.
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-2 text-xs">
+        <div className="flex items-center justify-between bg-slate-50 border border-slate-200/70 rounded-xl px-3.5 py-2.5">
+          <span className="text-slate-500 font-medium">Productos</span>
+          <span className="font-bold text-slate-800">
+            {paso1Listo ? `${totalItemsSolicitados} variedad(es)` : '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between bg-slate-50 border border-slate-200/70 rounded-xl px-3.5 py-2.5">
+          <span className="text-slate-500 font-medium">Unidades totales</span>
+          <span className="font-extrabold text-blue-600">
+            {paso1Listo ? `${totalUnidadesSolicitadas} und.` : '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between bg-slate-50 border border-slate-200/70 rounded-xl px-3.5 py-2.5 gap-2">
+          <span className="text-slate-500 font-medium shrink-0">Proveedor</span>
+          <span className="font-bold text-slate-800 truncate" title={nombreProveedorResumen || ''}>
+            {nombreProveedorResumen || '— falta elegir —'}
+          </span>
+        </div>
+      </div>
+
+      {!puedeGuardarOrden && !isSubmitting && faltantesOrden.length > 0 && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
+          Te falta: <strong>{faltantesOrden.join(' y ')}</strong> para guardar la orden.
+        </p>
+      )}
+
+      <button
+        type="button"
+        disabled={!puedeGuardarOrden}
+        onClick={handleGuardarOrdenCompra}
+        className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all duration-200 select-none ${
+          puedeGuardarOrden
+            ? 'bg-blue-600 hover:bg-blue-700 active:scale-98 text-white shadow-md shadow-blue-600/20 cursor-pointer'
+            : 'bg-slate-200/90 text-slate-400 cursor-not-allowed shadow-none'
+        }`}
+      >
+        {isSubmitting ? (
+          <>
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span>Guardando Orden de Compra...</span>
+          </>
+        ) : (
+          <>
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span>Guardar Orden de Compra</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* ENCABEZADO Y TABS PRINCIPALES */}
@@ -892,7 +1003,7 @@ export default function GestionOrdenesCompra({
           </div>
         </div>
 
-        {/* BOTONES DE PESTAÑA Y ACCIÓN RÁPIDA */}
+        {/* BOTONES DE PESTAÑA Y MÁS ACCIONES */}
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/70">
             <button
@@ -920,76 +1031,180 @@ export default function GestionOrdenesCompra({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowModalCompraRapida(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-            title="Registrar compra directa de emergencia sin esperar pedido formal"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>Compra Rápida</span>
-          </button>
-
-          {onNavigateToRecepcion && (
+          {/* Menú compacto de acciones secundarias */}
+          <div className="relative" ref={masAccionesRef}>
             <button
               type="button"
-              onClick={onNavigateToRecepcion}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 active:scale-95 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Ir al módulo oficial de Recepción de Mercadería"
+              onClick={() => setShowMasAcciones((p) => !p)}
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer border ${
+                showMasAcciones
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+              }`}
+              title="Más acciones del módulo"
+              aria-expanded={showMasAcciones}
             >
-              <PackageCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>Recepción de Mercadería</span>
+              <MoreVertical className="w-4 h-4" />
+              <span className="hidden sm:inline">Más acciones</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMasAcciones ? 'rotate-180' : ''}`} />
             </button>
-          )}
+
+            {showMasAcciones && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl border border-slate-200 shadow-xl z-40 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMasAcciones(false);
+                    setShowModalCompraRapida(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-amber-50 text-left transition cursor-pointer"
+                  title="Registrar compra directa de emergencia sin esperar pedido formal"
+                >
+                  <span className="p-2 bg-amber-100 text-amber-600 rounded-xl shrink-0">
+                    <Zap className="w-4 h-4" />
+                  </span>
+                  <span>
+                    <span className="block text-xs font-bold text-slate-800">Compra Rápida</span>
+                    <span className="block text-[11px] text-slate-400">Emergencia sin pedido formal</span>
+                  </span>
+                </button>
+
+                {onNavigateToRecepcion && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMasAcciones(false);
+                      onNavigateToRecepcion();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 text-left transition cursor-pointer border-t border-slate-100"
+                    title="Ir al módulo oficial de Recepción de Mercadería"
+                  >
+                    <span className="p-2 bg-blue-100 text-blue-600 rounded-xl shrink-0">
+                      <PackageCheck className="w-4 h-4" />
+                    </span>
+                    <span>
+                      <span className="block text-xs font-bold text-slate-800">Recepción de Mercadería</span>
+                      <span className="block text-[11px] text-slate-400">Verificar ingresos al almacén</span>
+                    </span>
+                  </button>
+                )}
+
+                {onNavigateToPredicciones && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMasAcciones(false);
+                      onNavigateToPredicciones();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 text-left transition cursor-pointer border-t border-slate-100"
+                    title="Ver sugerencias semanales de reabastecimiento"
+                  >
+                    <span className="p-2 bg-emerald-100 text-emerald-600 rounded-xl shrink-0">
+                      <Zap className="w-4 h-4" />
+                    </span>
+                    <span>
+                      <span className="block text-xs font-bold text-slate-800">Sugerencias de Reabastecimiento</span>
+                      <span className="block text-[11px] text-slate-400">Cálculo estadístico semanal</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* BANNER SUGERENCIAS DE REABASTECIMIENTO */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 border border-emerald-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-xs shrink-0">
-            <Zap className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-              <span>Sugerencias Semanales de Reabastecimiento</span>
-              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide bg-emerald-100 text-emerald-700 rounded-full border border-emerald-200">
-                Nuevo
-              </span>
-            </h3>
-            <p className="text-xs text-slate-600">
-              ¿No estás seguro de qué productos comprar esta semana? Consulta el cálculo estadístico basado en histórico de consumo, stock actual y órdenes en tránsito.
-            </p>
-          </div>
-        </div>
-        {onNavigateToPredicciones && (
-          <button
-            onClick={onNavigateToPredicciones}
-            className="self-start sm:self-auto flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer shrink-0"
-          >
-            <span>Ver Sugerencias</span>
-            <Zap className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
+      {onNavigateToPredicciones && (
+        <button
+          type="button"
+          onClick={onNavigateToPredicciones}
+          className="w-full bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 hover:from-emerald-500/15 hover:to-blue-500/15 border border-emerald-200/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs transition cursor-pointer text-left"
+        >
+          <span className="flex items-center gap-2.5 min-w-0">
+            <span className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-xs shrink-0">
+              <Zap className="w-4 h-4" />
+            </span>
+            <span className="text-xs text-slate-600 truncate">
+              <strong className="text-slate-800">¿Qué compro esta semana?</strong>
+              <span className="hidden sm:inline"> Ver sugerencias de reabastecimiento basadas en tu consumo.</span>
+            </span>
+          </span>
+          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl shrink-0">
+            Ver Sugerencias
+          </span>
+        </button>
+      )}
 
       {/* ========================================================================= */}
-      {/* VISTA 1: GENERAR NUEVA ORDEN DE COMPRA                                    */}
+      {/* VISTA 1: GENERAR NUEVA ORDEN DE COMPRA (flujo por pasos)                */}
       {/* ========================================================================= */}
       {activeTab === 'nueva' && (
         <div className="space-y-6">
-          {/* SECCIÓN 1: BUSCADOR Y SELECCIÓN DE PRODUCTOS */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-blue-600" />
-                <h2 className="text-sm font-bold text-slate-800">
-                  1. Buscar y Agregar Productos al Pedido
+          {/* STEPPER DEL FLUJO */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs px-4 sm:px-6 py-4 flex items-stretch gap-1 sm:gap-2 overflow-x-auto">
+            {pasosFlujo.map((s, i) => (
+              <React.Fragment key={s.n}>
+                {i > 0 && (
+                  <div className="flex items-center px-1 sm:px-2 shrink-0" aria-hidden="true">
+                    <div className={`h-0.5 w-6 sm:w-12 rounded-full ${pasosFlujo[i - 1].listo ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (s.n === 1) scrollAPaso(paso1Ref);
+                    else if (s.n === 2) scrollAPaso(paso2Ref);
+                    else scrollAPaso(paso3AsideRef, paso3MobileRef);
+                  }}
+                  className="flex items-center gap-2.5 min-w-0 text-left rounded-xl px-2 py-1 hover:bg-slate-50 transition cursor-pointer shrink-0"
+                >
+                  <span
+                    className={`w-7 h-7 rounded-full text-xs font-extrabold flex items-center justify-center shrink-0 border-2 transition ${
+                      s.listo
+                        ? 'bg-emerald-500 border-emerald-500 text-white'
+                        : s.actual
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25'
+                        : 'bg-white border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    {s.listo ? <CheckCircle2 className="w-4 h-4" /> : s.n}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={`block text-xs font-bold truncate ${s.actual || s.listo ? 'text-slate-800' : 'text-slate-400'}`}>
+                      {s.titulo}
+                    </span>
+                    <span className="hidden sm:block text-[11px] text-slate-400 truncate">
+                      {s.listo ? 'Completado' : s.desc}
+                    </span>
+                  </span>
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-6 items-start">
+            <div className="space-y-6 min-w-0">
+          {/* PASO 1: BUSCADOR, SELECCIÓN Y LISTA DE PRODUCTOS */}
+          <div ref={paso1Ref} className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4 scroll-mt-4">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center shrink-0">
+                  1
+                </span>
+                <h2 className="text-sm font-bold text-slate-800 truncate">
+                  Armar el Pedido
                 </h2>
               </div>
-              <span className="text-xs text-slate-400">
-                Selecciona producto, unidad y cantidad
-              </span>
+              {paso1Listo ? (
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
+                  {totalItemsSolicitados} prod. · {totalUnidadesSolicitadas} und.
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">
+                  Selecciona producto, unidad y cantidad
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -1060,22 +1275,24 @@ export default function GestionOrdenesCompra({
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                   Presentación / Unidad:
                 </label>
-                <select
+                <StyledSelect
                   disabled={!productoEnSeleccion}
                   value={unidadSeleccionada?.unidades_medidaId || ''}
-                  onChange={(e) => handleCambiarUnidad(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 focus:outline-hidden focus:border-blue-500 disabled:opacity-50 disabled:bg-slate-100 transition cursor-pointer"
-                >
-                  {productoEnSeleccion ? (
-                    (productoEnSeleccion.unidades || []).map((u) => (
-                      <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                        {u.descripcion} ({u.abreviatura})
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">-- Selecciona producto --</option>
-                  )}
-                </select>
+                  onChange={(v) => handleCambiarUnidad(v)}
+                  options={
+                    productoEnSeleccion
+                      ? (productoEnSeleccion.unidades || []).map((u) => ({
+                          value: u.unidades_medidaId,
+                          label: `${u.descripcion} (${u.abreviatura})`,
+                        }))
+                      : [{ value: '', label: '-- Selecciona producto --' }]
+                  }
+                  placeholder="-- Selecciona producto --"
+                  panelWidth={280}
+                  size="form"
+                  ariaLabel="Presentación o unidad de medida"
+                  icon={<Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                />
               </div>
 
               {/* Cantidad */}
@@ -1140,14 +1357,12 @@ export default function GestionOrdenesCompra({
                 </div>
               </div>
             )}
-          </div>
-
-          {/* SECCIÓN 2: LISTA DE PRODUCTOS SOLICITADOS (Fiel al diseño en media_1788930262004.png) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-800 tracking-tight">
-                Productos Solicitados:
-              </h2>
+          {/* Subsección: lista de solicitados dentro del Paso 1 */}
+          <div className="pt-4 border-t border-slate-100 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold text-slate-700">
+                Productos solicitados
+              </h3>
               {productosSolicitados.length > 0 && (
                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
                   {productosSolicitados.length} producto{productosSolicitados.length > 1 ? 's' : ''} en la orden
@@ -1226,40 +1441,41 @@ export default function GestionOrdenesCompra({
               </div>
             )}
 
-            {/* RESUMEN DEL REQUERIMIENTO */}
-            {productosSolicitados.length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <FileCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Lista oficial de requerimiento de mercadería para emisión a proveedor.</span>
-                </div>
-
-                <div className="flex items-center gap-6 text-sm">
-                  <div>
-                    <span className="text-xs text-slate-400 block">Variedades de Producto:</span>
-                    <span className="font-bold text-slate-800">
-                      {totalItemsSolicitados} producto{totalItemsSolicitados > 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div className="border-l border-slate-200 pl-6">
-                    <span className="text-xs text-slate-400 block font-medium">TOTAL UNIDADES A SOLICITAR:</span>
-                    <span className="text-lg font-extrabold text-blue-600">
-                      {totalUnidadesSolicitadas} unidades
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Pie del Paso 1: continuar al proveedor */}
+            <div className="flex items-center justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => scrollAPaso(paso2Ref)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
+              >
+                <span>Continuar al proveedor</span>
+                <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
+              </button>
+            </div>
+          </div>
           </div>
 
-          {/* SECCIÓN 3: TARJETA "CONFIRMAR Y GUARDAR ORDEN DE COMPRA" */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-5">
-            {/* Header de la tarjeta */}
-            <div className="flex items-center gap-2 text-slate-800">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <h2 className="text-sm font-bold text-slate-800">
-                Confirmar y Guardar Orden de Compra
-              </h2>
+          {/* PASO 2: PROVEEDOR Y ENTREGA */}
+          <div ref={paso2Ref} className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-5 scroll-mt-4">
+            {/* Header del paso */}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center shrink-0">
+                  2
+                </span>
+                <h2 className="text-sm font-bold text-slate-800 truncate">
+                  Proveedor y Entrega
+                </h2>
+              </div>
+              {paso2Listo ? (
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0 truncate max-w-[220px]">
+                  {nombreProveedorResumen}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">
+                  Destino y fecha de la compra
+                </span>
+              )}
             </div>
 
             {/* Contenido en dos columnas o flex */}
@@ -1342,29 +1558,15 @@ export default function GestionOrdenesCompra({
                 )}
               </div>
 
-              {/* Botón Guardar Orden de Compra */}
+              {/* Ir al resumen final */}
               <div className="md:col-span-6">
                 <button
                   type="button"
-                  disabled={!puedeGuardarOrden}
-                  onClick={handleGuardarOrdenCompra}
-                  className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all duration-200 select-none ${
-                    puedeGuardarOrden
-                      ? 'bg-blue-600 hover:bg-blue-700 active:scale-98 text-white shadow-md shadow-blue-600/20 cursor-pointer'
-                      : 'bg-slate-200/90 text-slate-400 cursor-not-allowed shadow-none'
-                  }`}
+                  onClick={() => scrollAPaso(paso3AsideRef, paso3MobileRef)}
+                  className="w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white transition-all cursor-pointer"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Guardando Orden de Compra...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-5 h-5 shrink-0" />
-                      <span>Guardar Orden de Compra</span>
-                    </>
-                  )}
+                  <span>Revisar y Guardar</span>
+                  <ChevronDown className="w-4 h-4 -rotate-90" />
                 </button>
               </div>
             </div>
@@ -1376,12 +1578,11 @@ export default function GestionOrdenesCompra({
                   <Calendar className="w-3.5 h-3.5 text-blue-600" />
                   <span>Fecha Estimada de Llegada (Lead Time):</span>
                 </label>
-                <input
-                  type="date"
+                <StyledDatePicker
                   value={fechaEntregaEstimada}
-                  onChange={(e) => setFechaEntregaEstimada(e.target.value)}
+                  onChange={(v) => setFechaEntregaEstimada(v)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-700 font-medium focus:outline-hidden focus:border-blue-500 focus:bg-white transition cursor-pointer"
+                  ariaLabel="Fecha Estimada de Llegada (Lead Time)"
                 />
               </div>
 
@@ -1400,6 +1601,18 @@ export default function GestionOrdenesCompra({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* PASO 3 lateral (xl): resumen siempre visible */}
+        <aside ref={paso3AsideRef} className="hidden xl:block xl:sticky xl:top-4 scroll-mt-4 min-w-0">
+          {renderResumenGuardar()}
+        </aside>
+      </div>
+
+      {/* PASO 3 en flujo normal (móvil / pantallas < xl) */}
+      <div ref={paso3MobileRef} className="xl:hidden scroll-mt-4">
+        {renderResumenGuardar()}
+      </div>
         </div>
       )}
 
@@ -1425,33 +1638,37 @@ export default function GestionOrdenesCompra({
               </div>
 
               {/* Filtro por estado */}
-              <select
+              <StyledSelect
                 value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-hidden focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="">Todos los Estados</option>
-                <option value="EMITIDA">Emitida</option>
-                <option value="RECEPCION_PARCIAL">En Recepción Parcial</option>
-                <option value="CERRADA_CONFORME">Cerrada Conforme</option>
-                <option value="CERRADA_CON_FALTANTE">Cerrada con Faltante</option>
-                <option value="ANULADA">Anulada</option>
-              </select>
+                onChange={(v) => setFiltroEstado(v)}
+                options={[
+                  { value: '', label: 'Todos los Estados' },
+                  { value: 'EMITIDA', label: 'Emitida' },
+                  { value: 'RECEPCION_PARCIAL', label: 'En Recepción Parcial' },
+                  { value: 'CERRADA_CONFORME', label: 'Cerrada Conforme' },
+                  { value: 'CERRADA_CON_FALTANTE', label: 'Cerrada con Faltante' },
+                  { value: 'ANULADA', label: 'Anulada' },
+                ]}
+                placeholder="Todos los Estados"
+                panelWidth={240}
+                ariaLabel="Filtrar por estado"
+                icon={<Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+              />
 
               {/* Fechas desde / hasta */}
               <div className="flex items-center gap-2">
-                <input
-                  type="date"
+                <StyledDatePicker
                   value={fechaDesde}
-                  onChange={(e) => setFechaDesde(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:border-blue-500"
+                  onChange={(v) => setFechaDesde(v)}
+                  size="sm"
+                  ariaLabel="Fecha desde"
                 />
                 <span className="text-slate-400 text-xs">a</span>
-                <input
-                  type="date"
+                <StyledDatePicker
                   value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:border-blue-500"
+                  onChange={(v) => setFechaHasta(v)}
+                  size="sm"
+                  ariaLabel="Fecha hasta"
                 />
               </div>
 
@@ -1890,19 +2107,21 @@ export default function GestionOrdenesCompra({
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
                     Presentación / Unidad:
                   </label>
-                  <select
+                  <StyledSelect
                     value={itemEnEdicion.nuevaUnidadId}
-                    onChange={(e) =>
-                      setItemEnEdicion({ ...itemEnEdicion, nuevaUnidadId: e.target.value })
+                    onChange={(v) =>
+                      setItemEnEdicion({ ...itemEnEdicion, nuevaUnidadId: v })
                     }
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 focus:outline-hidden focus:border-blue-500"
-                  >
-                    {itemEnEdicion.unidadesDisponibles.map((u) => (
-                      <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                        {u.descripcion} ({u.abreviatura})
-                      </option>
-                    ))}
-                  </select>
+                    options={(itemEnEdicion.unidadesDisponibles || []).map((u) => ({
+                      value: u.unidades_medidaId,
+                      label: `${u.descripcion} (${u.abreviatura})`,
+                    }))}
+                    placeholder="Selecciona unidad"
+                    panelWidth={280}
+                    size="form"
+                    ariaLabel="Presentación o unidad de medida"
+                    icon={<Package className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                  />
                 </div>
               )}
             </div>

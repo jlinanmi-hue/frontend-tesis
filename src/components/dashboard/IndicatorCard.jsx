@@ -1,44 +1,49 @@
 import React from 'react';
 import { Target, TrendingDown, Box, Clock, ChevronRight, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
+import { formatVariacion } from './helpers/dashboardFormatters';
 
-export default function IndicatorCard({ id, data, onClick }) {
-  // Configuración de cada indicador con sus textos e íconos institucionales (Metas Tesis 2026)
+export default function IndicatorCard({ id, data, peorData, onClick, onOpenPeor }) {
+  // Configuración de cada indicador con sus textos ejecutivos de negocio
   const configs = {
     1: {
       key: 'pode',
-      titulo: 'Porcentaje de Órdenes Despachadas Exitosamente',
-      subtitulo: 'Meta vs. Actual',
+      titulo: 'Órdenes Despachadas con Éxito (PODE)',
+      subtitulo: 'Cumplimiento general de entrega',
       icon: <Target className="w-4 h-4 text-blue-600" />,
       iconBg: 'bg-blue-50/80 border-blue-100/90',
       metaText: `Meta: ≥ ${data?.meta ?? 95}%`,
       unit: '%',
+      isInverted: false,
     },
     2: {
       key: 'peor',
-      titulo: 'Porcentaje de Error en Órdenes Registradas',
-      subtitulo: 'Tendencia y Severidad',
+      titulo: 'Errores en Registro de Pedidos (PEOR)',
+      subtitulo: 'Precisión y captura sin fallos',
       icon: <TrendingDown className="w-4 h-4 text-emerald-600" />,
       iconBg: 'bg-emerald-50/80 border-emerald-100/90',
       metaText: `Meta: ≤ ${data?.meta ?? 2}%`,
       unit: '%',
+      isInverted: true,
     },
     3: {
       key: 'prs',
-      titulo: 'Porcentaje de Roturas de Stock Semanales',
-      subtitulo: 'Frecuencia de Quiebres e Incidencias Físicas',
+      titulo: 'Quiebres de Stock Semanales (PRS)',
+      subtitulo: 'Incidencias por falta de inventario',
       icon: <Box className="w-4 h-4 text-purple-600" />,
       iconBg: 'bg-purple-50/80 border-purple-100/90',
       metaText: `Meta: ≤ ${data?.meta ?? 3}%`,
       unit: '%',
+      isInverted: true,
     },
     4: {
       key: 'tbpp',
-      titulo: 'Tiempo de Búsqueda y Registro por Pedido',
-      subtitulo: 'Telemetría de Flujo con IA',
+      titulo: 'Tiempo de Registro por Pedido (TBPP)',
+      subtitulo: 'Agilidad de atención con asistencia IA',
       icon: <Clock className="w-4 h-4 text-indigo-600" />,
       iconBg: 'bg-indigo-50/80 border-indigo-100/90',
       metaText: `Meta: ≤ ${data?.meta ?? 180}s`,
       unit: 's',
+      isInverted: true,
     },
   };
 
@@ -46,6 +51,8 @@ export default function IndicatorCard({ id, data, onClick }) {
   const resultado = data?.resultado ?? (id === 1 ? 28 : id === 2 ? 0 : id === 3 ? 0 : 2.5);
   const cumple = data?.cumple ?? (id === 1 ? false : true);
   const semaforo = data?.estado_semaforo || (cumple ? 'OPTIMO' : 'ALERTA');
+  const delta = data?.anterior?.delta_pct;
+  const variacionInfo = formatVariacion(delta, cfg.isInverted);
 
   // Renderizado del micro-gráfico con alta legibilidad
   const renderChart = () => {
@@ -285,9 +292,16 @@ export default function IndicatorCard({ id, data, onClick }) {
             <h3 className="text-slate-800 font-semibold text-xs leading-snug group-hover:text-blue-600 transition-colors">
               {cfg.titulo}
             </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5 font-normal">
-              {cfg.subtitulo}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-[11px] text-slate-400 font-normal">
+                {cfg.subtitulo}
+              </p>
+              {variacionInfo && (
+                <span className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.2 rounded-md ${variacionInfo.badgeClass}`}>
+                  {variacionInfo.badgeText}
+                </span>
+              )}
+            </div>
           </div>
 
           <div
@@ -299,6 +313,31 @@ export default function IndicatorCard({ id, data, onClick }) {
 
         {/* Gráfico visual claro y limpio */}
         {renderChart()}
+
+        {/* Sub-indicador PEOR incrustado dentro de PODE */}
+        {(id === 1 || cfg.key === 'pode') && peorData && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof onOpenPeor === 'function') onOpenPeor();
+            }}
+            className="mt-2.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-amber-50/80 border border-slate-200/70 hover:border-amber-300 transition-all flex items-center justify-between text-xs group/peor cursor-pointer"
+            title="Abrir análisis detallado de errores en registro (PEOR)"
+          >
+            <div className="flex items-center gap-1.5 text-slate-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <span className="font-semibold text-[11px]">Errores en registro:</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono font-extrabold text-amber-800 text-xs">
+                {Number(peorData.resultado ?? 0).toFixed(1)}%
+              </span>
+              <span className="text-[10px] text-slate-400 group-hover/peor:text-amber-700 font-semibold flex items-center">
+                Detalle <ChevronRight className="w-3 h-3 inline" />
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pie interactivo con Meta y semáforo de 3 niveles */}

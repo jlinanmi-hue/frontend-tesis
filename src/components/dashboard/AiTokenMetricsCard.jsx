@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SafeApexChart from './charts/SafeApexChart';
+import StyledDatePicker from '../common/StyledDatePicker';
 import {
   Cpu,
   Sparkles,
@@ -355,22 +356,22 @@ export default function AiTokenMetricsCard() {
         >
           <div className="flex items-center gap-2">
             <span className="text-slate-500 font-medium">Desde:</span>
-            <input
-              type="date"
+            <StyledDatePicker
               value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              required
+              onChange={(v) => setFechaDesde(v)}
+              size="sm"
+              max={fechaHasta || undefined}
+              ariaLabel="Fecha de inicio del rango"
             />
           </div>
           <div className="flex items-center gap-2">
             <span className="text-slate-500 font-medium">Hasta:</span>
-            <input
-              type="date"
+            <StyledDatePicker
               value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              required
+              onChange={(v) => setFechaHasta(v)}
+              size="sm"
+              min={fechaDesde || undefined}
+              ariaLabel="Fecha de fin del rango"
             />
           </div>
           <button

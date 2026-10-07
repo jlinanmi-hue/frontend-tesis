@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionCategorias() {
   const [categorias, setCategorias] = useState([]);
@@ -271,15 +272,18 @@ export default function GestionCategorias() {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estado Inicial
               </label>
-              <select
-                name="Categoria_ProductoEstado"
+              <StyledSelect
+                size="form"
                 value={formData.Categoria_ProductoEstado}
-                onChange={handleInputChange}
-                className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="A">Activo (Disponible en inventario)</option>
-                <option value="I">Inactivo</option>
-              </select>
+                onChange={(v) => handleInputChange({ target: { name: 'Categoria_ProductoEstado', value: v } })}
+                options={[
+                  { value: 'A', label: 'Activo (Disponible en inventario)' },
+                  { value: 'I', label: 'Inactivo' },
+                ]}
+                placeholder="Seleccionar estado..."
+                ariaLabel="Estado inicial de la categoría"
+                panelWidth={240}
+              />
             </div>
 
             <div className="pt-3">

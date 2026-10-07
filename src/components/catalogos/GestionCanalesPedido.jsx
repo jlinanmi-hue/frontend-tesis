@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionCanalesPedido() {
   const [canales, setCanales] = useState([]);
@@ -254,15 +255,18 @@ export default function GestionCanalesPedido() {
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estado
               </label>
-              <select
-                name="Canal_pedidoEstado"
+              <StyledSelect
+                size="form"
                 value={formData.Canal_pedidoEstado}
-                onChange={handleInputChange}
-                className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-              >
-                <option value="A">Activo (Habilitado para pedidos)</option>
-                <option value="I">Inactivo</option>
-              </select>
+                onChange={(v) => handleInputChange({ target: { name: 'Canal_pedidoEstado', value: v } })}
+                options={[
+                  { value: 'A', label: 'Activo (Habilitado para pedidos)' },
+                  { value: 'I', label: 'Inactivo' },
+                ]}
+                placeholder="Seleccionar estado..."
+                ariaLabel="Estado del canal de pedido"
+                panelWidth={240}
+              />
             </div>
 
             <div className="pt-3">

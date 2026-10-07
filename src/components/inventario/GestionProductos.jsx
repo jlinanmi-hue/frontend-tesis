@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionProductos() {
   const [productos, setProductos] = useState([]);
@@ -612,19 +613,23 @@ export default function GestionProductos() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Categoría <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  required
+                <StyledSelect
                   value={formData.Producto_Categoria_ProductoId}
-                  onChange={(e) => setFormData({ ...formData, Producto_Categoria_ProductoId: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
-                >
-                  <option value="">-- Seleccionar --</option>
-                  {categorias.map((c) => (
-                    <option key={c.Categoria_ProductoId} value={c.Categoria_ProductoId}>
-                      {c.Categoria_ProductoDescripcion_categoria}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setFormData({ ...formData, Producto_Categoria_ProductoId: v })}
+                  options={[
+                    { value: '', label: '-- Seleccionar --' },
+                    ...categorias.map((c) => ({
+                      value: c.Categoria_ProductoId,
+                      label: c.Categoria_ProductoDescripcion_categoria,
+                    })),
+                  ]}
+                  placeholder="-- Seleccionar --"
+                  searchable
+                  panelWidth={280}
+                  size="form"
+                  ariaLabel="Categoría del producto"
+                  icon={<Layers className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                />
               </div>
 
               <div>
@@ -651,18 +656,25 @@ export default function GestionProductos() {
                   Almacén / Estante
                 </span>
               </label>
-              <select
+              <StyledSelect
                 value={formData.Producto_producto_ubi_id}
-                onChange={(e) => setFormData({ ...formData, Producto_producto_ubi_id: e.target.value })}
-                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
-              >
-                <option value="">-- Sin Ubicación Asignada (Opcional) --</option>
-                {ubicaciones.map((u) => (
-                  <option key={u.producto_ubi_id} value={u.producto_ubi_id}>
-                    {u.producto_ubi_descripcion} {u.producto_ubi_observacion ? `(${u.producto_ubi_observacion})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setFormData({ ...formData, Producto_producto_ubi_id: v })}
+                options={[
+                  { value: '', label: '-- Sin Ubicación Asignada (Opcional) --' },
+                  ...ubicaciones.map((u) => ({
+                    value: u.producto_ubi_id,
+                    label: u.producto_ubi_observacion
+                      ? `${u.producto_ubi_descripcion} (${u.producto_ubi_observacion})`
+                      : u.producto_ubi_descripcion,
+                  })),
+                ]}
+                placeholder="-- Sin Ubicación Asignada (Opcional) --"
+                searchable
+                panelWidth={280}
+                size="form"
+                ariaLabel="Ubicación de almacén"
+                icon={<MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+              />
             </div>
 
             {/* Descripción del Producto (Opcional) */}
@@ -848,17 +860,18 @@ export default function GestionProductos() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <div className="col-span-2 sm:col-span-2">
                         <label className="block text-[10px] font-semibold text-slate-500 mb-1">Unidad</label>
-                        <select
+                        <StyledSelect
                           value={det.unidades_medidaId}
-                          onChange={(e) => handleDetalleChange(index, 'unidades_medidaId', e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500 cursor-pointer"
-                        >
-                          {unidadesCatalogo.map((u) => (
-                            <option key={u.unidades_medidaId} value={u.unidades_medidaId}>
-                              {u.unidades_medidaDescripcionUnidades}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(v) => handleDetalleChange(index, 'unidades_medidaId', v)}
+                          options={unidadesCatalogo.map((u) => ({
+                            value: u.unidades_medidaId,
+                            label: u.unidades_medidaDescripcionUnidades,
+                          }))}
+                          placeholder="Selecciona unidad"
+                          searchable
+                          panelWidth={240}
+                          ariaLabel={`Unidad de medida de la presentación ${index + 1}`}
+                        />
                       </div>
 
                       <div className="col-span-2 sm:col-span-2">

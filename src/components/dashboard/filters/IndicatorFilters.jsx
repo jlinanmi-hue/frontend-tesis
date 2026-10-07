@@ -1,5 +1,19 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Calendar, Filter, RefreshCw, Download, GitCompare } from 'lucide-react';
+import StyledSelect from './StyledSelect';
+import { generarSemanasDelAno } from '../../../utils/datePeriodUtils';
+
+const MESES_2026 = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+const CANALES = [
+  { value: '', label: 'Todos los Canales' },
+  { value: 'CNL-00001', label: 'Tienda Presencial' },
+  { value: 'CNL-00002', label: 'Canal Web / App' },
+  { value: 'CNL-00003', label: 'WhatsApp Comercial' },
+];
 
 export default function IndicatorFilters({
   indicatorId,
@@ -12,49 +26,69 @@ export default function IndicatorFilters({
 }) {
   const isWeekly = indicatorId === 3;
 
+  // Listado completo de las 52 semanas del año (igual que en Comparar)
+  const semanasGroups = useMemo(() => {
+    const semanas = generarSemanasDelAno(2026, true);
+    const porMes = new Map();
+    semanas.forEach((s) => {
+      const mesIdx = Number(String(s.fechaInicio || '').slice(5, 7)) || 1;
+      const mesLabel = `${MESES_2026[mesIdx - 1]} 2026`;
+      if (!porMes.has(mesLabel)) porMes.set(mesLabel, []);
+      porMes.get(mesLabel).push({
+        value: s.key,
+        label: s.key === '2026-W37' ? `${s.label} • Actual` : s.label,
+      });
+    });
+    return Array.from(porMes.entries()).map(([label, opts]) => ({ label, options: opts }));
+  }, []);
+
+  const mesesOptions = useMemo(
+    () =>
+      MESES_2026.map((nombre, idx) => {
+        const mm = String(idx + 1).padStart(2, '0');
+        const val = `2026-${mm}`;
+        return {
+          value: val,
+          label: val === '2026-09' ? `${nombre} 2026 (Actual)` : `${nombre} 2026`,
+        };
+      }),
+    []
+  );
+
   return (
     <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2.5 min-w-0">
         {/* Selector de Período (Mes o Semana) */}
-        <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
-          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-          {isWeekly ? (
-            <select
-              value={filters.semana || '2026-W37'}
-              onChange={(e) => onChange({ ...filters, semana: e.target.value })}
-              className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
-            >
-              <option value="2026-W37">Semana 37 (Actual - Sept 2026)</option>
-              <option value="2026-W36">Semana 36 (Sept 2026)</option>
-              <option value="2026-W35">Semana 35 (Ago 2026)</option>
-            </select>
-          ) : (
-            <select
-              value={filters.mes || '2026-09'}
-              onChange={(e) => onChange({ ...filters, mes: e.target.value, periodo: e.target.value })}
-              className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
-            >
-              <option value="2026-09">Septiembre 2026 (Actual)</option>
-              <option value="2026-08">Agosto 2026</option>
-              <option value="2026-07">Julio 2026</option>
-            </select>
-          )}
-        </div>
+        {isWeekly ? (
+          <StyledSelect
+            value={filters.semana || '2026-W37'}
+            onChange={(v) => onChange({ ...filters, semana: v })}
+            groups={semanasGroups}
+            searchable
+            panelWidth={300}
+            ariaLabel="Seleccionar semana del año 2026"
+            icon={<Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+          />
+        ) : (
+          <StyledSelect
+            value={filters.mes || '2026-09'}
+            onChange={(v) => onChange({ ...filters, mes: v, periodo: v })}
+            options={mesesOptions}
+            panelWidth={240}
+            ariaLabel="Seleccionar mes del año 2026"
+            icon={<Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+          />
+        )}
 
         {/* Filtro por Canal de Pedido */}
-        <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
-          <select
-            value={filters.canal || ''}
-            onChange={(e) => onChange({ ...filters, canal: e.target.value })}
-            className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="">Todos los Canales</option>
-            <option value="CNL-00001">Tienda Presencial</option>
-            <option value="CNL-00002">Canal Web / App</option>
-            <option value="CNL-00003">WhatsApp Comercial</option>
-          </select>
-        </div>
+        <StyledSelect
+          value={filters.canal || ''}
+          onChange={(v) => onChange({ ...filters, canal: v })}
+          options={CANALES}
+          panelWidth={220}
+          ariaLabel="Filtrar por canal de pedido"
+          icon={<Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+        />
       </div>
 
       <div className="flex items-center gap-2">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sliders, X, RefreshCw, AlertCircle, CheckCircle2, ArrowDownRight, ArrowUpRight, ShieldAlert } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function ModalAjusteManual({ isOpen, onClose, onAjusteExitoso }) {
   const [productos, setProductos] = useState([]);
@@ -228,25 +229,27 @@ export default function ModalAjusteManual({ isOpen, onClose, onAjusteExitoso }) 
               <label className="block font-semibold text-slate-700 mb-1">
                 Unidad de Medida
               </label>
-              <select
-                disabled={!productoSeleccionado || unidades.length === 0}
+              <StyledSelect
+                size="form"
                 value={unidadSeleccionada?.unidades_medidaId || unidadSeleccionada?.id || ''}
-                onChange={(e) => {
-                  const u = unidades.find((x) => (x.unidades_medidaId || x.id) === e.target.value);
+                onChange={(v) => {
+                  const u = unidades.find((x) => (x.unidades_medidaId || x.id) === v);
                   setUnidadSeleccionada(u || null);
                 }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-hidden focus:border-purple-500 cursor-pointer disabled:opacity-50"
-              >
-                {unidades.length > 0 ? (
-                  unidades.map((u) => (
-                    <option key={u.unidades_medidaId || u.id} value={u.unidades_medidaId || u.id}>
-                      {u.descripcion || u.unidades_medidaNombre} ({u.abreviatura || u.unidades_medidaAbreviatura})
-                    </option>
-                  ))
-                ) : (
-                  <option value="">Unidad Base (UND)</option>
-                )}
-              </select>
+                options={
+                  unidades.length > 0
+                    ? unidades.map((u) => ({
+                        value: u.unidades_medidaId || u.id,
+                        label: `${u.descripcion || u.unidades_medidaNombre} (${u.abreviatura || u.unidades_medidaAbreviatura})`,
+                      }))
+                    : [{ value: '', label: 'Unidad Base (UND)' }]
+                }
+                disabled={!productoSeleccionado || unidades.length === 0}
+                placeholder="Seleccionar unidad..."
+                searchable
+                ariaLabel="Unidad de medida del ajuste"
+                panelWidth={240}
+              />
             </div>
 
             <div>

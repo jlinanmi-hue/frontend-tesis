@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
 
 export default function GestionUsuarios() {
   const [empleados, setEmpleados] = useState([]);
@@ -497,35 +499,37 @@ export default function GestionUsuarios() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Sexo *
                 </label>
-                <select
-                  name="EmpleadoSexo"
+                <StyledSelect
                   value={formData.EmpleadoSexo}
-                  onChange={handleInputChange}
-                  className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-                >
-                  <option value="M">Masculino (M)</option>
-                  <option value="F">Femenino (F)</option>
-                </select>
+                  onChange={(v) => handleInputChange({ target: { name: 'EmpleadoSexo', value: v } })}
+                  options={[
+                    { value: 'M', label: 'Masculino (M)' },
+                    { value: 'F', label: 'Femenino (F)' },
+                  ]}
+                  placeholder="Seleccionar..."
+                  panelWidth={240}
+                  size="form"
+                  ariaLabel="Sexo del empleado"
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Cargo *
                 </label>
-                <select
-                  name="Empleado_cargoId"
+                <StyledSelect
                   value={formData.Empleado_cargoId}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-                >
-                  <option value="">Seleccione cargo...</option>
-                  {cargos.map((cargo) => (
-                    <option key={cargo.cargoId} value={cargo.cargoId}>
-                      {cargo.cargoDescripcion}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => handleInputChange({ target: { name: 'Empleado_cargoId', value: v } })}
+                  options={[
+                    { value: '', label: 'Seleccione cargo...' },
+                    ...cargos.map((cargo) => ({ value: cargo.cargoId, label: cargo.cargoDescripcion })),
+                  ]}
+                  placeholder="Seleccione cargo..."
+                  searchable
+                  panelWidth={240}
+                  size="form"
+                  ariaLabel="Cargo del empleado"
+                />
               </div>
             </div>
 
@@ -535,13 +539,10 @@ export default function GestionUsuarios() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Fecha de Ingreso *
                 </label>
-                <input
-                  type="date"
-                  name="EmpleadoFechaIngreso"
+                <StyledDatePicker
                   value={formData.EmpleadoFechaIngreso}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                  onChange={(v) => handleInputChange({ target: { name: 'EmpleadoFechaIngreso', value: v } })}
+                  ariaLabel="Fecha de ingreso del empleado"
                 />
               </div>
 
@@ -549,17 +550,20 @@ export default function GestionUsuarios() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Estado Laboral *
                 </label>
-                <select
-                  name="EmpleadoEstado"
+                <StyledSelect
                   value={formData.EmpleadoEstado}
-                  onChange={handleInputChange}
-                  className="w-full h-11 px-3.5 text-sm bg-slate-50/70 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition cursor-pointer"
-                >
-                  <option value="A">Activo</option>
-                  <option value="V">De Vacaciones</option>
-                  <option value="L">Con Licencia</option>
-                  <option value="I">Inactivo</option>
-                </select>
+                  onChange={(v) => handleInputChange({ target: { name: 'EmpleadoEstado', value: v } })}
+                  options={[
+                    { value: 'A', label: 'Activo' },
+                    { value: 'V', label: 'De Vacaciones' },
+                    { value: 'L', label: 'Con Licencia' },
+                    { value: 'I', label: 'Inactivo' },
+                  ]}
+                  placeholder="Seleccionar..."
+                  panelWidth={240}
+                  size="form"
+                  ariaLabel="Estado laboral del empleado"
+                />
               </div>
             </div>
 
@@ -810,16 +814,18 @@ export default function GestionUsuarios() {
 
                             {/* Selector rápido de estado */}
                             {!isEliminado && (
-                              <select
+                              <StyledSelect
                                 value={emp.EmpleadoEstado || 'A'}
-                                onChange={(e) => handleChangeEstado(emp, e.target.value)}
-                                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium cursor-pointer focus:outline-none"
-                                title="Cambiar estado laboral"
-                              >
-                                <option value="A">Activo</option>
-                                <option value="V">Vacaciones</option>
-                                <option value="L">Licencia</option>
-                              </select>
+                                onChange={(v) => handleChangeEstado(emp, v)}
+                                options={[
+                                  { value: 'A', label: 'Activo' },
+                                  { value: 'V', label: 'Vacaciones' },
+                                  { value: 'L', label: 'Licencia' },
+                                ]}
+                                placeholder="Seleccionar..."
+                                panelWidth={220}
+                                ariaLabel="Cambiar estado laboral"
+                              />
                             )}
 
                             {/* Botón Eliminar o Restaurar */}

@@ -24,6 +24,7 @@ import api from '../../services/api';
 import ModalRecepcionMercaderia from './ModalRecepcionMercaderia';
 import ModalHistorialRecepcion from './ModalHistorialRecepcion';
 import ModalAnularRecepcion from './ModalAnularRecepcion';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionRecepcionMercaderia() {
   const [ordenes, setOrdenes] = useState([]);
@@ -312,18 +313,20 @@ export default function GestionRecepcionMercaderia() {
 
         {/* SELECTOR DE ESTADOS OFICIALES */}
         <div className="flex items-center gap-2 flex-wrap">
-          <select
+          <StyledSelect
             value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-hidden focus:border-blue-500 cursor-pointer"
-          >
-            <option value="">Todos los Estados</option>
-            <option value="EMITIDA">Emitida</option>
-            <option value="RECEPCION_PARCIAL">En Recepción Parcial</option>
-            <option value="CERRADA_CONFORME">Cerrada Conforme</option>
-            <option value="CERRADA_CON_FALTANTE">Cerrada con Faltante</option>
-            <option value="ANULADA">Anulada</option>
-          </select>
+            onChange={(v) => setFiltroEstado(v)}
+            options={[
+              { value: '', label: 'Todos los Estados' },
+              { value: 'EMITIDA', label: 'Emitida' },
+              { value: 'RECEPCION_PARCIAL', label: 'En Recepción Parcial' },
+              { value: 'CERRADA_CONFORME', label: 'Cerrada Conforme' },
+              { value: 'CERRADA_CON_FALTANTE', label: 'Cerrada con Faltante' },
+              { value: 'ANULADA', label: 'Anulada' },
+            ]}
+            panelWidth={230}
+            ariaLabel="Filtrar por estado de recepción"
+          />
 
           {(searchTerm || filtroEstado) && (
             <button
@@ -601,21 +604,23 @@ export default function GestionRecepcionMercaderia() {
           <div className="px-4 py-3 bg-white border-t border-slate-200 flex items-center justify-end gap-4 text-xs text-slate-500 rounded-b-2xl">
             <div className="flex items-center gap-2">
               <span className="text-slate-500">Filas por página:</span>
-              <select
+              <StyledSelect
                 value={paginacion.per_page}
-                onChange={(e) => {
+                onChange={(v) => {
                   setPaginacion((prev) => ({
                     ...prev,
-                    per_page: Number(e.target.value),
+                    per_page: Number(v),
                     current_page: 1,
                   }));
                 }}
-                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
+                options={[
+                  { value: 10, label: '10' },
+                  { value: 25, label: '25' },
+                  { value: 50, label: '50' },
+                ]}
+                panelWidth={200}
+                ariaLabel="Filas por página"
+              />
             </div>
 
             <div className="flex items-center gap-1">

@@ -1,6 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, ChevronDown, Check, ArrowRight, Clock } from 'lucide-react';
+import { Calendar, Check } from 'lucide-react';
+import StyledSelect from './StyledSelect';
+import StyledDatePicker from '../../common/StyledDatePicker';
 import { generarSemanasDelAno, normalizarPeriodo, obtenerRangoDeSemanaIso } from '../../../utils/datePeriodUtils';
+
+const MESES_CORTO = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
 
 /**
  * PeriodSelector
@@ -16,6 +23,22 @@ export default function PeriodSelector({
 }) {
   const semanas = useMemo(() => generarSemanasDelAno(2026, true), []);
   const norm = useMemo(() => normalizarPeriodo(value), [value]);
+
+  const semanasGroups = useMemo(() => {
+    const porMes = new Map();
+    semanas.forEach((s) => {
+      const mesIdx = Number(String(s.fechaInicio || '').slice(5, 7)) || 1;
+      const mesLabel = `${MESES_CORTO[mesIdx - 1]} 2026`;
+      if (!porMes.has(mesLabel)) porMes.set(mesLabel, []);
+      porMes.get(mesLabel).push({ value: s.key, label: s.label });
+    });
+    const lista = Array.from(porMes.entries()).map(([label, opts]) => ({ label, options: opts }));
+    lista.push({
+      label: 'Rango específico',
+      options: [{ value: 'CUSTOM_RANGE', label: '📅 Rango de Fechas Personalizado...' }],
+    });
+    return lista;
+  }, [semanas]);
 
   const [modo, setModo] = useState(norm.tipo === 'custom' ? 'custom' : 'week');
   const [showCustomInputs, setShowCustomInputs] = useState(norm.tipo === 'custom');
@@ -35,8 +58,7 @@ export default function PeriodSelector({
     }
   }, [norm]);
 
-  const handleSelectChange = (e) => {
-    const val = e.target.value;
+  const handleValueChange = (val) => {
     if (val === 'CUSTOM_RANGE') {
       setModo('custom');
       setShowCustomInputs(true);
@@ -101,27 +123,16 @@ export default function PeriodSelector({
       </div>
 
       {/* Control principal desplegable */}
-      <div className={`relative bg-white rounded-xl border ${themeStyles.border} shadow-2xs transition-all`}>
-        <select
-          value={modo === 'custom' ? 'CUSTOM_RANGE' : (norm.valor || '2026-W37')}
-          onChange={handleSelectChange}
-          disabled={disabled}
-          aria-label={`Seleccionar período para ${label}`}
-          className="w-full bg-transparent px-3 py-2 pr-8 text-xs font-semibold text-slate-800 outline-none cursor-pointer disabled:opacity-50 appearance-none"
-        >
-          <optgroup label="── Semanas del Año 2026 ──">
-            {semanas.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="── Rango Específico ──">
-            <option value="CUSTOM_RANGE">📅 Rango de Fechas Personalizado...</option>
-          </optgroup>
-        </select>
-        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
-      </div>
+      <StyledSelect
+        value={modo === 'custom' ? 'CUSTOM_RANGE' : (norm.valor || '2026-W37')}
+        onChange={handleValueChange}
+        groups={semanasGroups}
+        searchable
+        panelWidth={300}
+        disabled={disabled}
+        ariaLabel={`Seleccionar período para ${label}`}
+        icon={<Calendar className={`w-3.5 h-3.5 ${themeStyles.icon} shrink-0`} />}
+      />
 
       {/* Panel colapsable de Rango de Fechas Personalizado */}
       {showCustomInputs && (
@@ -132,20 +143,22 @@ export default function PeriodSelector({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <span className="text-[10px] text-slate-500 font-semibold block mb-0.5">Desde:</span>
-              <input
-                type="date"
+              <StyledDatePicker
                 value={fechaDesde}
-                onChange={(e) => setFechaDesde(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono outline-none focus:border-blue-500"
+                onChange={(v) => setFechaDesde(v)}
+                size="sm"
+                max={fechaHasta || undefined}
+                ariaLabel="Fecha de inicio del rango personalizado"
               />
             </div>
             <div>
               <span className="text-[10px] text-slate-500 font-semibold block mb-0.5">Hasta:</span>
-              <input
-                type="date"
+              <StyledDatePicker
                 value={fechaHasta}
-                onChange={(e) => setFechaHasta(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono outline-none focus:border-blue-500"
+                onChange={(v) => setFechaHasta(v)}
+                size="sm"
+                min={fechaDesde || undefined}
+                ariaLabel="Fecha de fin del rango personalizado"
               />
             </div>
           </div>

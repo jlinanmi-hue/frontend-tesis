@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Zap, X, RefreshCw, AlertCircle, CheckCircle2, Building2, Package } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
+import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function ModalCompraRapida({
   isOpen,
@@ -244,22 +245,23 @@ export default function ModalCompraRapida({
               <label className="block font-semibold text-slate-700 mb-1">
                 Presentación / Unidad
               </label>
-              <select
-                disabled={!productoSeleccionado || unidades.length === 0}
+              <StyledSelect
                 value={unidadSeleccionada?.unidades_medidaId || unidadSeleccionada?.id || ''}
-                onChange={(e) => handleCambiarUnidad(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-hidden focus:border-amber-500 cursor-pointer disabled:opacity-50"
-              >
-                {unidades.length > 0 ? (
-                  unidades.map((u) => (
-                    <option key={u.unidades_medidaId || u.id} value={u.unidades_medidaId || u.id}>
-                      {u.descripcion || u.unidades_medidaNombre} ({u.abreviatura || u.unidades_medidaAbreviatura})
-                    </option>
-                  ))
-                ) : (
-                  <option value="">Unidad Base (UND)</option>
-                )}
-              </select>
+                onChange={(v) => handleCambiarUnidad(v)}
+                options={
+                  unidades.length > 0
+                    ? unidades.map((u) => ({
+                        value: u.unidades_medidaId || u.id,
+                        label: `${u.descripcion || u.unidades_medidaNombre} (${u.abreviatura || u.unidades_medidaAbreviatura})`,
+                      }))
+                    : [{ value: '', label: 'Unidad Base (UND)' }]
+                }
+                disabled={!productoSeleccionado || unidades.length === 0}
+                searchable={unidades.length > 8}
+                size="form"
+                panelWidth={240}
+                ariaLabel="Presentación o unidad de medida"
+              />
             </div>
 
             <div>

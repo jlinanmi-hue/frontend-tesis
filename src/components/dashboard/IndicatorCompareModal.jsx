@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import PeriodSelector from './filters/PeriodSelector';
+import StyledSelect from './filters/StyledSelect';
 import FunnelChart from './charts/FunnelChart';
 import StackedBarChart from './charts/StackedBarChart';
 import LineChart from './charts/LineChart';
@@ -254,6 +255,11 @@ export default function IndicatorCompareModal({
       const failA = Math.max(0, ...(dataA?.failure_reasons || []).map(d => Number(d.total) || 0));
       const failB = Math.max(0, ...(dataB?.failure_reasons || []).map(d => Number(d.total) || 0));
       sc.failMax = Math.max(failA, failB) > 0 ? Math.ceil(Math.max(failA, failB) * 1.2) : undefined;
+
+      // IA vs Manual para Subgráfico F (PEOR)
+      const iaA = Math.max(0, ...(dataA?.ia_vs_manual || []).map(d => Number(d.total) || 0));
+      const iaB = Math.max(0, ...(dataB?.ia_vs_manual || []).map(d => Number(d.total) || 0));
+      sc.iaMax = Math.max(iaA, iaB) > 0 ? Math.ceil(Math.max(iaA, iaB) * 1.2) : undefined;
     }
 
     if (indicatorId === 2) {
@@ -385,6 +391,16 @@ export default function IndicatorCompareModal({
                 </div>
               </div>
             )}
+
+            {/* Subgráfico F: PEOR (Causa Principal de Fallo) */}
+            <SubchartCard
+              title="Subgráfico F: Incidencia de Error PEOR (IA vs. Manual)"
+              subtitle="Órdenes con error por método de captura • Causa de fallos en PODE"
+              badge="Causa de Fallo"
+              interpretation="Contraste de precisión entre la captura asistida por Valencia AI y la digitación manual tradicional."
+            >
+              <StackedBarChart data={colData.ia_vs_manual || []} isOrigin={true} yAxisMax={scaleObj.iaMax} />
+            </SubchartCard>
           </>
         )}
 
@@ -636,20 +652,19 @@ export default function IndicatorCompareModal({
 
           <div className="flex items-center gap-2">
             {/* Filtro Canal Compartido */}
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs shadow-2xs">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={selectedCanal}
-                onChange={(e) => setSelectedCanal(e.target.value)}
-                className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
-                title="Filtro de canal aplicado simultáneamente a ambos períodos"
-              >
-                <option value="">Todos los Canales</option>
-                <option value="CNL-00001">Tienda Presencial</option>
-                <option value="CNL-00002">Canal Web / App</option>
-                <option value="CNL-00003">WhatsApp Comercial</option>
-              </select>
-            </div>
+            <StyledSelect
+              value={selectedCanal}
+              onChange={(v) => setSelectedCanal(v)}
+              options={[
+                { value: '', label: 'Todos los Canales' },
+                { value: 'CNL-00001', label: 'Tienda Presencial' },
+                { value: 'CNL-00002', label: 'Canal Web / App' },
+                { value: 'CNL-00003', label: 'WhatsApp Comercial' },
+              ]}
+              panelWidth={220}
+              ariaLabel="Filtro de canal aplicado simultáneamente a ambos períodos"
+              icon={<Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+            />
 
             {/* Botón Imprimir / PDF */}
             <button

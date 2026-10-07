@@ -19,7 +19,8 @@ import {
   UserCircle,
   MapPin,
   Scale,
-  Building2
+  Building2,
+  Bell
 } from 'lucide-react';
 import api from '../services/api';
 import Dashboard from './Dashboard';
@@ -28,7 +29,8 @@ import {
   GestionCategorias,
   GestionCanalesPedido,
   GestionUbicaciones,
-  GestionUnidadesMedida
+  GestionUnidadesMedida,
+  GestionZonasDelivery
 } from './catalogos';
 import { GestionRoles, GestionCargos } from './seguridad';
 import { GestionProductos, GestionMovimientos, GestionAjustesInventario } from './inventario';
@@ -39,6 +41,8 @@ import PrediccionesCompra from './ordenes/PrediccionesCompra';
 import GestionEmpresa from './empresa/GestionEmpresa';
 import MiCuenta from './cuenta/MiCuenta';
 import ChatBotWidget from './chatbot/ChatBotWidget';
+import NotificacionesDropdown from './notificaciones/NotificacionesDropdown';
+import GestionNotificaciones from './notificaciones/GestionNotificaciones';
 
 export default function Layout({ user, onLogout, onUpdateUserData, children }) {
   // Estado de navegación activa (Pantalla de inicio: Indicadores Globales / Dashboard)
@@ -134,6 +138,29 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
     };
   }, []);
 
+  const handleNavigateModule = (url) => {
+    if (!url) return;
+    if (url === '/dashboard' || url === '/indicadores') {
+      setActiveMenu('indicadores');
+      setActiveSubMenu('indicadores_general');
+    } else if (url === '/ordenes-compra') {
+      setActiveMenu('ordenes');
+      setActiveSubMenu('ordenes_compra');
+      setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
+    } else if (url === '/ordenes-clientes' || url === '/pedidos') {
+      setActiveMenu('ordenes');
+      setActiveSubMenu('ordenes_clientes');
+      setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
+    } else if (url.includes('/inventario') || url.includes('/productos')) {
+      setActiveMenu('inventario');
+      setActiveSubMenu('inventario_stock');
+      setOpenDropdowns((prev) => ({ ...prev, inventario: true }));
+    } else if (url.includes('/notificaciones')) {
+      setActiveMenu('notificaciones');
+      setActiveSubMenu('notificaciones_tabla');
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans text-slate-800 notranslate" translate="no">
       
@@ -181,6 +208,24 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 )}
                 <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeMenu === 'indicadores' ? 'text-blue-400' : 'text-slate-400'}`} />
                 <span className="truncate">Indicadores Globales</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveMenu('notificaciones');
+                  setActiveSubMenu('notificaciones_tabla');
+                }}
+                className={`w-full relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-150 cursor-pointer ${
+                  activeMenu === 'notificaciones'
+                    ? 'bg-slate-800 text-slate-100 font-medium'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                }`}
+              >
+                {activeMenu === 'notificaciones' && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r-full" />
+                )}
+                <Bell className={`w-4 h-4 shrink-0 ${activeMenu === 'notificaciones' ? 'text-blue-400' : 'text-slate-400'}`} />
+                <span className="truncate">Notificaciones</span>
               </button>
             </nav>
           </div>
@@ -323,6 +368,21 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                     >
                       <Scale className={`w-3.5 h-3.5 shrink-0 ${activeMenu === 'catalogos' && activeSubMenu === 'catalogos_unidades' ? 'text-blue-400' : 'text-slate-500'}`} />
                       <span className="truncate">Unidades de Medida</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveMenu('catalogos');
+                        setActiveSubMenu('catalogos_zonas');
+                      }}
+                      className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
+                        activeMenu === 'catalogos' && activeSubMenu === 'catalogos_zonas'
+                          ? 'bg-slate-800/90 text-blue-400 font-medium'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
+                      }`}
+                    >
+                      <MapPin className={`w-3.5 h-3.5 shrink-0 ${activeMenu === 'catalogos' && activeSubMenu === 'catalogos_zonas' ? 'text-blue-400' : 'text-slate-500'}`} />
+                      <span className="truncate">Zonas de Delivery</span>
                     </button>
                   </div>
                 )}
@@ -754,6 +814,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 ? 'Gestión de Inventario: Ajustes y Mermas'
                 : activeMenu === 'inventario'
                 ? 'Gestión de Inventario: Control de Stock y Kardex'
+                : activeMenu === 'catalogos' && activeSubMenu === 'catalogos_zonas'
+                ? 'Gestión de Catálogos: Zonas de Delivery'
                 : activeMenu === 'catalogos' && activeSubMenu === 'catalogos_canales'
                 ? 'Gestión de Catálogos: Canales de Pedido'
                 : activeMenu === 'catalogos'
@@ -764,6 +826,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 ? 'Roles y Seguridad: Roles de Usuario'
                 : activeMenu === 'indicadores'
                 ? 'Panel de Control: Indicadores Globales y Métricas'
+                : activeMenu === 'notificaciones'
+                ? 'Bandeja de Entrada: Tabla de Notificaciones del Sistema'
                 : activeMenu === 'clientes'
                 ? 'Gestión Comercial: Directorio de Clientes'
                 : activeMenu === 'proveedores'
@@ -771,21 +835,32 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                 : 'Módulo del Sistema'}
             </h1>
           </div>
-          <button
-            onClick={() => {
-              setActiveMenu('micuenta');
-              setActiveSubMenu('micuenta_perfil');
-            }}
-            className="flex items-center gap-3.5 text-sm text-slate-600 hover:bg-slate-100/90 px-3.5 py-1.5 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200"
-            title="Ver y editar Mi Cuenta"
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="font-semibold text-slate-800">{user?.nombreCompleto || user?.usuario || 'admin'}</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-blue-600 font-semibold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 text-xs">
-              {user?.cargo || 'Personal Autorizado'}
-            </span>
-          </button>
+
+          <div className="flex items-center gap-3">
+            <NotificacionesDropdown
+              onVerTabla={() => {
+                setActiveMenu('notificaciones');
+                setActiveSubMenu('notificaciones_tabla');
+              }}
+              onNavigate={handleNavigateModule}
+            />
+
+            <button
+              onClick={() => {
+                setActiveMenu('micuenta');
+                setActiveSubMenu('micuenta_perfil');
+              }}
+              className="flex items-center gap-3.5 text-sm text-slate-600 hover:bg-slate-100/90 px-3.5 py-1.5 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200"
+              title="Ver y editar Mi Cuenta"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-semibold text-slate-800">{user?.nombreCompleto || user?.usuario || 'admin'}</span>
+              <span className="text-slate-300">|</span>
+              <span className="text-blue-600 font-semibold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 text-xs">
+                {user?.cargo || 'Personal Autorizado'}
+              </span>
+            </button>
+          </div>
         </header>
 
         {/* Contenido Renderizado Dinámico */}
@@ -836,6 +911,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
             <GestionAjustesInventario />
           ) : activeMenu === 'inventario' ? (
             <GestionMovimientos />
+          ) : activeMenu === 'catalogos' && activeSubMenu === 'catalogos_zonas' ? (
+            <GestionZonasDelivery />
           ) : activeMenu === 'catalogos' && activeSubMenu === 'catalogos_canales' ? (
             <GestionCanalesPedido />
           ) : activeMenu === 'catalogos' && activeSubMenu === 'catalogos_ubicaciones' ? (
@@ -848,6 +925,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
             <GestionCargos />
           ) : activeMenu === 'seguridad' ? (
             <GestionRoles />
+          ) : activeMenu === 'notificaciones' ? (
+            <GestionNotificaciones onNavigateModule={handleNavigateModule} />
           ) : activeMenu === 'indicadores' ? (
             <Dashboard />
           ) : (
