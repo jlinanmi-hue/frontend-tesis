@@ -71,7 +71,7 @@ function ColumnError({ error, onRetry }) {
 
 function SubchartCard({ title, subtitle, badge, children, interpretation }) {
   return (
-    <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-2">
+    <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs space-y-2 min-w-0 overflow-hidden">
       <div className="flex items-start justify-between gap-2 mb-1">
         <div>
           <h4 className="font-bold text-xs text-slate-800">{title}</h4>
@@ -630,7 +630,7 @@ export default function IndicatorCompareModal({
         {/* ================================================================= */}
         {/* CABECERA DEL MODAL COMPARATIVO                                   */}
         {/* ================================================================= */}
-        <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3 shrink-0 relative z-10">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-600 text-white rounded-xl shadow-xs">
               <GitCompare className="w-5 h-5" />
@@ -693,7 +693,7 @@ export default function IndicatorCompareModal({
         {/* BANNER DE AVISO SI LOS PERÍODOS SON IDÉNTICOS                    */}
         {/* ================================================================= */}
         {sonIguales && (
-          <div className="bg-amber-50 border-b border-amber-200 px-5 py-2 flex items-center gap-2 text-xs text-amber-800">
+          <div className="bg-amber-50 border-b border-amber-200 px-5 py-2 flex items-center gap-2 text-xs text-amber-800 shrink-0 relative z-10">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
               <strong>Períodos idénticos:</strong> Los períodos seleccionados en A y B abarcan el mismo rango de fechas. Las variaciones porcentuales (Δ) se reflejan en 0.0.
@@ -704,7 +704,7 @@ export default function IndicatorCompareModal({
         {/* ================================================================= */}
         {/* BARRA DE TABS EXCLUSIVA PARA MÓVIL (< 1024px)                     */}
         {/* ================================================================= */}
-        <div className="lg:hidden border-b border-slate-200 bg-slate-100/80 px-4 py-2 flex items-center justify-around text-xs">
+        <div className="lg:hidden border-b border-slate-200 bg-slate-100/80 px-4 py-2 flex items-center justify-around text-xs shrink-0 relative z-10">
           <button
             type="button"
             onClick={() => setActiveMobileTab('a')}
@@ -743,8 +743,8 @@ export default function IndicatorCompareModal({
         {/* ================================================================= */}
         {/* CONTENIDO PRINCIPAL: DOS COLUMNAS LADO A LADO                    */}
         {/* ================================================================= */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 space-y-6 relative z-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start [&>*]:min-w-0">
             
             {/* ------------------------------------------------------------- */}
             {/* COLUMNA IZQUIERDA: PERÍODO A (REFERENCIA / BASE)              */}

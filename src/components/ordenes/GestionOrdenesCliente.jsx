@@ -371,9 +371,17 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   const [isConsultandoSunat, setIsConsultandoSunat] = useState(false);
   const [isGuardandoCliente, setIsGuardandoCliente] = useState(false);
 
-  // Canal y Acuerdo Comercial
+  // Canal y Tipo de Registro (Cotización vs Pedido)
   const [canalSeleccionado, setCanalSeleccionado] = useState('CNL-00001');
-  const [acuerdoComercial, setAcuerdoComercial] = useState('Contado Mostrador');
+  const [acuerdoComercial, setAcuerdoComercial] = useState('Pedido');
+
+  // Helper para verificar si una orden es Cotización
+  const esCotizacionOrden = (orden) => {
+    if (!orden) return false;
+    if (orden.es_cotizacion !== undefined) return Boolean(orden.es_cotizacion);
+    const ac = String(orden.tipo_registro || orden.acuerdo_comercial || orden.PedidoAcuerdo_Comercial || '').toLowerCase();
+    return ac.includes('cotiz');
+  };
 
   // Despacho, Fecha de Entrega y Delivery
   const [fechaEntrega, setFechaEntrega] = useState(() => {
@@ -685,6 +693,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
   const [showModalEditarDespacho, setShowModalEditarDespacho] = useState(false);
   const [ordenParaEditarDespacho, setOrdenParaEditarDespacho] = useState(null);
   const [despachoEditFecha, setDespachoEditFecha] = useState('');
+  const [despachoEditAcuerdo, setDespachoEditAcuerdo] = useState('Pedido');
   const [despachoEditEsDelivery, setDespachoEditEsDelivery] = useState(false);
   const [despachoEditZona, setDespachoEditZona] = useState(null);
   const [despachoEditDireccion, setDespachoEditDireccion] = useState('');
@@ -866,9 +875,10 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       })));
     }
 
-    // 4. Precargar acuerdo comercial y canal si aplican
+    // 4. Precargar tipo de registro (Cotización vs Pedido) y canal si aplican
     if (prefill.acuerdo_comercial) {
-      setAcuerdoComercial(prefill.acuerdo_comercial);
+      const esCotiz = String(prefill.acuerdo_comercial).toLowerCase().includes('cotiz');
+      setAcuerdoComercial(esCotiz ? 'Cotización' : 'Pedido');
     }
     if (prefill.canal_id) {
       setCanalSeleccionado(prefill.canal_id);
@@ -931,7 +941,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       setProductoEnSeleccion(null);
       setCantidadInput(1);
       setPrecioUnitarioInput(0);
-      setAcuerdoComercial('Contado Mostrador');
+      setAcuerdoComercial('Pedido');
       setShowModalEditarItem(false);
       setItemEnEdicion(null);
       setEsOrigenIa(false);
@@ -987,7 +997,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
           subtotal: Number(p.subtotal) || ((Number(p.cantidad) || 1) * (Number(p.precio_unitario) || 0)),
         })),
         canal_id: canalSeleccionado || 'CNL-00001',
-        acuerdo_comercial: acuerdoComercial || 'Contado Mostrador',
+        acuerdo_comercial: acuerdoComercial || 'Pedido',
       };
       window._valenciaAiLiveDraft = draft;
       try {
@@ -1147,7 +1157,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     }
 
     setCanalSeleccionado('CNL-00001'); // Tienda Presencial
-    setAcuerdoComercial('Contado Mostrador');
+    setAcuerdoComercial('Pedido');
     setSearchCliente('');
     setIsDropdownClienteOpen(false);
     sileo.info('Cliente Mostrador asignado para venta rápida.');
@@ -2075,7 +2085,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       const payload = {
         cliente_id: clienteSeleccionado.id,
         canal_id: canalSeleccionado || 'CNL-00001',
-        acuerdo_comercial: acuerdoComercial.trim() || 'Contado Mostrador',
+        acuerdo_comercial: acuerdoComercial.trim() || 'Pedido',
         origen_ia: esOrigenIa ? 'S' : 'N',
         fecha_entrega: fechaEntrega || null,
         es_delivery: esDelivery ? 'S' : 'N',
@@ -2120,7 +2130,12 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       const res = await api.pedidosCliente.crear(payload);
       if (res?.success && res.data) {
         const ordenCreada = res.data;
-        sileo.success(`¡Orden de pedido ${ordenCreada.id} generada exitosamente! Stock descontado de almacén.`);
+        const esCotiz = acuerdoComercial === 'Cotización';
+        if (esCotiz) {
+          sileo.success(`¡Cotización ${ordenCreada.id} registrada exitosamente! Stock de almacén permanece intacto.`);
+        } else {
+          sileo.success(`¡Orden de pedido ${ordenCreada.id} generada exitosamente! Stock descontado de almacén.`);
+        }
 
         setModalExito({
           orden: ordenCreada,
@@ -2139,25 +2154,27 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
           acuerdo: acuerdoComercial,
         });
 
-        // Actualización optimista del stock físico en el catálogo del selector de productos
-        const itemsDescontados = [...productosPedido];
-        setProductosSelect(prevProds => {
-          return (Array.isArray(prevProds) ? prevProds : []).map(prod => {
-            const matchItem = itemsDescontados.find(p => p.producto_id === prod.ProductoId);
-            if (matchItem) {
-              const cantFactor = (parseFloat(matchItem.cantidad) || 0) * (parseFloat(matchItem.factor_conversion) || 1);
-              const stockActual = parseFloat(prod.ProductoStockActual ?? 0) || 0;
-              const nuevoStock = Math.max(0, stockActual - cantFactor);
-              return {
-                ...prod,
-                ProductoStockActual: nuevoStock,
-                stock_total_vendible: nuevoStock,
-                stock_actual_texto: `${Math.round(nuevoStock)} ${prod.unidad_base || 'UND'}`,
-              };
-            }
-            return prod;
+        // Actualización optimista del stock físico en el catálogo (solo si es Pedido)
+        if (!esCotiz) {
+          const itemsDescontados = [...productosPedido];
+          setProductosSelect(prevProds => {
+            return (Array.isArray(prevProds) ? prevProds : []).map(prod => {
+              const matchItem = itemsDescontados.find(p => p.producto_id === prod.ProductoId);
+              if (matchItem) {
+                const cantFactor = (parseFloat(matchItem.cantidad) || 0) * (parseFloat(matchItem.factor_conversion) || 1);
+                const stockActual = parseFloat(prod.ProductoStockActual ?? 0) || 0;
+                const nuevoStock = Math.max(0, stockActual - cantFactor);
+                return {
+                  ...prod,
+                  ProductoStockActual: nuevoStock,
+                  stock_total_vendible: nuevoStock,
+                  stock_actual_texto: `${Math.round(nuevoStock)} ${prod.unidad_base || 'UND'}`,
+                };
+              }
+              return prod;
+            });
           });
-        });
+        }
 
         // Recargar catálogos frescos en segundo plano
         cargarCatalogos();
@@ -2165,7 +2182,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         setProductosPedido([]);
         setClienteSeleccionado(null);
         setSearchCliente('');
-        setAcuerdoComercial('Contado Mostrador');
+        setAcuerdoComercial('Pedido');
         setEsDelivery(false);
         setZonaSeleccionada(null);
         setCustomerCoords(null);
@@ -2423,6 +2440,9 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     if (!orden) return;
     setOrdenParaEditarDespacho(orden);
 
+    // Tipo de registro (Cotización vs Pedido)
+    setDespachoEditAcuerdo(esCotizacionOrden(orden) ? 'Cotización' : 'Pedido');
+
     // Fecha de entrega
     let fechaVal = '';
     if (orden.fecha_entrega) {
@@ -2565,11 +2585,17 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         referencia_entrega: despachoEditEsDelivery ? (despachoEditReferencia.trim() || null) : null,
         latitud: despachoEditEsDelivery && despachoEditCoords ? despachoEditCoords[1] : null,
         longitud: despachoEditEsDelivery && despachoEditCoords ? despachoEditCoords[0] : null,
+        acuerdo_comercial: despachoEditAcuerdo,
       };
 
       const res = await api.pedidosCliente.actualizar(ordenParaEditarDespacho.id, payload);
       if (res?.success) {
-        sileo.success(`Despacho de la orden ${ordenParaEditarDespacho.id} actualizado correctamente.`);
+        const eraCotizacion = esCotizacionOrden(ordenParaEditarDespacho);
+        const ahoraEsPedido = despachoEditAcuerdo === 'Pedido';
+        const msgExito = (eraCotizacion && ahoraEsPedido)
+          ? `¡Cotización ${ordenParaEditarDespacho.id} convertida a Pedido! Stock validado y descontado exitosamente.`
+          : `Registro ${ordenParaEditarDespacho.id} actualizado correctamente.`;
+        sileo.success(msgExito);
         setShowModalEditarDespacho(false);
         setOrdenParaEditarDespacho(null);
         if (showModalDetalle) {
@@ -2578,7 +2604,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         cargarHistorial(paginacion.current_page);
         cargarEstadisticas();
       } else {
-        sileo.error(res?.message || 'No se pudo actualizar el despacho de la orden.');
+        sileo.error(res?.message || 'No se pudo actualizar el registro de la orden.');
       }
     } catch (err) {
       console.error('Error al actualizar despacho:', err);
@@ -2831,8 +2857,15 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                    Condición / Acuerdo Comercial:
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center justify-between">
+                    <span>Tipo de Registro:</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      acuerdoComercial === 'Cotización'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {acuerdoComercial === 'Cotización' ? '📄 Stock intacto' : '⚡ Descuenta stock'}
+                    </span>
                   </label>
                   <StyledSelect
                     value={acuerdoComercial}
@@ -2841,22 +2874,14 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                       setAcuerdoComercial(v);
                     }}
                     options={[
-                      { value: 'Contado Mostrador', label: 'Contado Mostrador' },
-                      { value: 'Contado Efectivo', label: 'Contado Efectivo' },
-                      { value: 'Yape / Plin', label: 'Yape / Plin' },
-                      { value: 'Transferencia Bancaria', label: 'Transferencia Bancaria (BCP / BBVA / Interbank)' },
-                      { value: 'Contra Entrega', label: 'Contra Entrega (Efectivo al recibir)' },
-                      { value: 'Crédito 7 días', label: 'Crédito 7 días' },
-                      { value: 'Crédito 15 días', label: 'Crédito 15 días' },
-                      { value: 'Crédito 30 días', label: 'Crédito 30 días' },
-                      { value: 'Especial / Por Definir', label: 'Especial / Por Definir' }
+                      { value: 'Cotización', label: 'Cotización (No descuenta stock)' },
+                      { value: 'Pedido', label: 'Pedido (Descuenta stock)' },
                     ]}
-                    icon={<DollarSign className="w-4 h-4 text-slate-400" />}
-                    placeholder="Seleccionar condición..."
-                    searchable
+                    icon={acuerdoComercial === 'Cotización' ? <FileText className="w-4 h-4 text-amber-500" /> : <FileCheck2 className="w-4 h-4 text-blue-500" />}
+                    placeholder="Seleccionar tipo..."
                     panelWidth={280}
                     size="form"
-                    ariaLabel="Condición / Acuerdo Comercial"
+                    ariaLabel="Tipo de Registro"
                   />
                 </div>
               </div>
@@ -3634,28 +3659,55 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                 className={`w-full py-3.5 px-4 rounded-xl text-xs font-bold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
                   isSubmitting || productosPedido.length === 0 || !clienteSeleccionado
                     ? 'bg-slate-300 cursor-not-allowed shadow-none'
-                    : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'
+                    : acuerdoComercial === 'Cotización'
+                      ? 'bg-amber-600 hover:bg-amber-700 active:scale-[0.98]'
+                      : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'
                 }`}
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Registrando Pedido y Descontando Stock...</span>
+                    <span>
+                      {acuerdoComercial === 'Cotización'
+                        ? 'Guardando Cotización...'
+                        : 'Registrando Pedido y Descontando Stock...'}
+                    </span>
                   </>
                 ) : (
                   <>
-                    <FileCheck2 className="w-4 h-4" />
-                    <span>REGISTRAR PEDIDO DE CLIENTE</span>
+                    {acuerdoComercial === 'Cotización' ? (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        <span>GUARDAR COTIZACIÓN</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileCheck2 className="w-4 h-4" />
+                        <span>REGISTRAR PEDIDO DE CLIENTE</span>
+                      </>
+                    )}
                   </>
                 )}
               </button>
 
               <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] text-slate-500 space-y-1">
-                <p className="flex items-center gap-1.5 font-semibold text-slate-700">
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  Descuento automático de inventario
-                </p>
-                <p>Al confirmar, el stock disponible se reservará y quedará registrado el movimiento de salida en el Kárdex.</p>
+                {acuerdoComercial === 'Cotización' ? (
+                  <>
+                    <p className="flex items-center gap-1.5 font-semibold text-amber-700">
+                      <FileText className="w-3.5 h-3.5 text-amber-600" />
+                      Modo Cotización: Stock de almacén intacto
+                    </p>
+                    <p>No se descontará stock ni se generará movimiento de salida en Kárdex. Podrás convertirla a Pedido en cualquier momento.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="flex items-center gap-1.5 font-semibold text-slate-700">
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      Descuento automático de inventario
+                    </p>
+                    <p>Al confirmar, el stock disponible se reservará y quedará registrado el movimiento de salida en el Kárdex.</p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -3864,7 +3916,16 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                         <tr key={orden.id} className="hover:bg-slate-50/80 transition">
                           {/* ID */}
                           <td className="py-3.5 px-4 font-bold text-slate-900">
-                            {orden.id}
+                            <div>{orden.id}</div>
+                            {esCotizacionOrden(orden) ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 mt-0.5" title="Cotización - Sin descuento de stock">
+                                <FileText className="w-2.5 h-2.5" /> Cotización
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5" title="Pedido - Stock descontado">
+                                <FileCheck2 className="w-2.5 h-2.5" /> Pedido
+                              </span>
+                            )}
                           </td>
 
                           {/* Fecha */}
@@ -4022,15 +4083,19 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                                 <Printer className="w-4 h-4" />
                               </button>
 
-                              {/* Modificar Despacho si está pendiente */}
+                              {/* Modificar Despacho / Cotización si está pendiente */}
                               {isPendiente && (
                                 <button
                                   type="button"
                                   onClick={() => abrirModalEditarDespacho(orden)}
-                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                                  title="Modificar Despacho o Reprogramar Fecha"
+                                  className={`p-1.5 rounded-lg transition ${
+                                    esCotizacionOrden(orden)
+                                      ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
+                                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
+                                  }`}
+                                  title={esCotizacionOrden(orden) ? 'Editar Cotización / Convertir a Pedido' : 'Modificar Despacho o Reprogramar Fecha'}
                                 >
-                                  <Truck className="w-4 h-4" />
+                                  {esCotizacionOrden(orden) ? <Pencil className="w-4 h-4 text-amber-600" /> : <Truck className="w-4 h-4" />}
                                 </button>
                               )}
 
@@ -4465,7 +4530,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                     </div>
                   </div>
 
-                  {/* Datos del Cliente y Acuerdo */}
+                  {/* Datos del Cliente y Tipo de Registro */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200/80 rounded-xl">
                     <div>
                       <span className="font-bold text-slate-500 block mb-1">CLIENTE</span>
@@ -4474,13 +4539,43 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                       <p className="text-slate-500">Teléfono: {ordenDetalle.cliente?.telefono || 'No especificado'}</p>
                     </div>
                     <div>
-                      <span className="font-bold text-slate-500 block mb-1">CONDICIONES COMERCIALES</span>
-                      <p className="font-semibold text-slate-800">
-                        Acuerdo: {ordenDetalle.acuerdo_comercial || 'Contado Mostrador'}
-                      </p>
+                      <span className="font-bold text-slate-500 block mb-1">TIPO DE REGISTRO</span>
+                      <div className="flex items-center gap-2 mb-1">
+                        {esCotizacionOrden(ordenDetalle) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            <FileText className="w-3.5 h-3.5" /> Cotización (Stock intacto)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                            <FileCheck2 className="w-3.5 h-3.5" /> Pedido (Stock descontado)
+                          </span>
+                        )}
+                      </div>
                       <p className="text-slate-500">Registrado por: {ordenDetalle.usuario_registro || 'Sistema'}</p>
                     </div>
                   </div>
+
+                  {/* Banner de acción rápida si es Cotización pendiente */}
+                  {esCotizacionOrden(ordenDetalle) && ordenDetalle.estado === 'P' && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-amber-900">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Este registro es una <strong>Cotización</strong>. El stock de almacén no ha sido descontado.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowModalDetalle(false);
+                          abrirModalEditarDespacho(ordenDetalle);
+                          setDespachoEditAcuerdo('Pedido');
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer transition"
+                      >
+                        <FileCheck2 className="w-3.5 h-3.5" />
+                        <span>Convertir a Pedido</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Información de Despacho y Entrega */}
                   <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
@@ -4914,11 +5009,11 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5 text-blue-600">
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
-                  <Truck className="w-5 h-5" />
+                  <Pencil className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 text-sm">Modificar Despacho / Fecha</h3>
-                  <p className="text-[11px] text-slate-500">Orden de Pedido: <span className="font-semibold text-slate-700">{ordenParaEditarDespacho.id}</span></p>
+                  <h3 className="font-bold text-slate-800 text-sm">Editar Registro / Despacho</h3>
+                  <p className="text-[11px] text-slate-500">Orden: <span className="font-semibold text-slate-700">{ordenParaEditarDespacho.id}</span></p>
                 </div>
               </div>
               <button
@@ -4944,6 +5039,61 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   S/ {parseFloat(ordenParaEditarDespacho.subtotal || (ordenParaEditarDespacho.total - (ordenParaEditarDespacho.costo_delivery || 0))).toFixed(2)}
                 </span>
               </div>
+            </div>
+
+            {/* Tipo de Registro: Cotización vs Pedido */}
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  Tipo de Registro:
+                </label>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  despachoEditAcuerdo === 'Cotización'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                }`}>
+                  {despachoEditAcuerdo === 'Cotización' ? '📄 Stock intacto (Sin descuento)' : '⚡ Descuenta stock de almacén'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDespachoEditAcuerdo('Cotización')}
+                  className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex items-center gap-2 ${
+                    despachoEditAcuerdo === 'Cotización'
+                      ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs ring-1 ring-amber-300 font-bold'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <FileText className={`w-4 h-4 ${despachoEditAcuerdo === 'Cotización' ? 'text-amber-600' : 'text-slate-400'}`} />
+                  <div>
+                    <p className="text-xs">Cotización</p>
+                    <p className="text-[10px] text-slate-500 font-normal">No descuenta stock</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDespachoEditAcuerdo('Pedido')}
+                  className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex items-center gap-2 ${
+                    despachoEditAcuerdo === 'Pedido'
+                      ? 'bg-blue-50 border-blue-400 text-blue-900 shadow-xs ring-1 ring-blue-300 font-bold'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <FileCheck2 className={`w-4 h-4 ${despachoEditAcuerdo === 'Pedido' ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <div>
+                    <p className="text-xs">Pedido</p>
+                    <p className="text-[10px] text-slate-500 font-normal">Descuenta stock</p>
+                  </div>
+                </button>
+              </div>
+              {esCotizacionOrden(ordenParaEditarDespacho) && despachoEditAcuerdo === 'Pedido' && (
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-[11px] flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span>Al guardar como <strong>Pedido</strong>, el stock será validado y descontado inmediatamente en el Kárdex.</span>
+                </div>
+              )}
             </div>
 
             {/* Fecha de Entrega */}

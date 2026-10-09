@@ -13,13 +13,16 @@
     "@turf/boolean-point-in-polygon": "^7.4.0",
     "@turf/helpers": "^7.4.0",
     "apexcharts": "^7.1.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.39.0",
     "mapbox-gl": "^3.32.0",
     "react": "^19.2.8",
     "react-apexcharts": "^2.1.1",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
-    "sileo": "^0.1.5"
+    "sileo": "^0.1.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

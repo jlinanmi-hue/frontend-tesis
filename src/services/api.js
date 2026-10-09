@@ -1052,6 +1052,41 @@ export const api = {
       const qs = new URLSearchParams(params).toString();
       return request(`/dashboard/tokens${qs ? `?${qs}` : ''}`);
     },
+    fichaObservacion: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/ficha-observacion${qs ? `?${qs}` : ''}`, options);
+    },
+    fichaDiariaDetalle: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/ficha-diaria-detalle${qs ? `?${qs}` : ''}`, options);
+    },
+    reporteConsolidado: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/reporte-consolidado${qs ? `?${qs}` : ''}`, options);
+    },
+    detalleDiarioSemana: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/detalle-diario-semana${qs ? `?${qs}` : ''}`, options);
+    },
+    semanasDelAnio: (params = {}, options = {}) => {
+      const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== '' && typeof v !== 'object')
+      );
+      const qs = new URLSearchParams(cleanParams).toString();
+      return request(`/dashboard/semanas-del-anio${qs ? `?${qs}` : ''}`, options);
+    },
   },
 
   // 17. MÓDULO DE NOTIFICACIONES Y ALERTAS EN TIEMPO REAL

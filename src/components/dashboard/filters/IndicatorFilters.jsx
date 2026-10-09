@@ -124,10 +124,11 @@ export default function IndicatorFilters({
         <button
           type="button"
           onClick={onExport}
-          className="flex items-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 transition"
+          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-3 py-1.5 rounded-lg border border-blue-700 transition shadow-xs cursor-pointer"
+          title="Exportar Ficha de Observación oficial para la tesis (Excel / PDF)"
         >
-          <Download className="w-3.5 h-3.5 text-slate-500" />
-          Exportar
+          <Download className="w-3.5 h-3.5 text-blue-100" />
+          <span>Exportar Ficha</span>
         </button>
       </div>
     </div>

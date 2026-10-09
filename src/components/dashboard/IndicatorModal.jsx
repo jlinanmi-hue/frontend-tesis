@@ -12,6 +12,7 @@ import AreaChart from './charts/AreaChart';
 import ScatterChart from './charts/ScatterChart';
 import GaugeChart from './charts/GaugeChart';
 import IndicatorCompareModal from './IndicatorCompareModal';
+import ExportarFichaModal from './ExportarFichaModal';
 
 function InterpretationBox({ text }) {
   return (
@@ -30,6 +31,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [filters, setFilters] = useState({
     mes: indicatorData?.periodo || '2026-09',
     semana: indicatorData?.periodo || '2026-W37',
@@ -72,9 +74,9 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
     return () => clearInterval(interval);
   }, [autoRefresh, cargarDetalle]);
 
-  // Exportar vista rápida a formato imprimible/PDF
+  // Exportar Ficha de Observación oficial para sustentar la Tesis
   const handleExport = () => {
-    window.print();
+    setShowExportModal(true);
   };
 
   const titles = {
@@ -89,7 +91,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
       <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[94vh] my-2 sm:my-4 flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 min-w-0">
         
         {/* Cabecera del Modal */}
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 flex items-start justify-between gap-3 bg-slate-50/50">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200/80 flex items-start justify-between gap-3 bg-slate-50/50 shrink-0 relative z-10">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm sm:text-lg font-bold text-slate-800 tracking-tight leading-snug break-words min-w-0">
@@ -114,7 +116,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
         </div>
 
         {/* Barra de Filtros y Controles */}
-        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 bg-white overflow-x-auto">
+        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 bg-white overflow-x-auto shrink-0 relative z-10">
           <IndicatorFilters
             indicatorId={indicatorId}
             filters={filters}
@@ -127,7 +129,7 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
         </div>
 
         {/* Contenido Principal: Rejilla 2x2 de Subgráficos */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/40">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 min-w-0 bg-slate-50/40 relative z-0">
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center text-slate-400 gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -848,6 +850,16 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
           initialPeriod={indicatorId === 3 ? (filters.semana || '2026-W37') : (filters.mes || filters.semana || '2026-09')}
           canal={filters.canal}
           onClose={() => setShowCompareModal(false)}
+        />
+      )}
+
+      {/* Modal de Exportación de Ficha de Observación (Tesis) */}
+      {showExportModal && (
+        <ExportarFichaModal
+          isOpen={showExportModal}
+          indicatorId={indicatorId}
+          indicatorData={indicatorData}
+          onClose={() => setShowExportModal(false)}
         />
       )}
     </div>
