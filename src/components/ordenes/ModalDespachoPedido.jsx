@@ -6,15 +6,14 @@ import {
   X,
   XCircle,
   RotateCcw,
-  Boxes,
+  Check,
   Truck,
   User,
-  Phone,
-  Calendar,
-  AlertCircle,
-  FileText,
+  Clock,
+  Boxes,
   Building2,
-  DollarSign
+  DollarSign,
+  ArrowRight
 } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
@@ -29,6 +28,7 @@ export default function ModalDespachoPedido({
   const [pedido, setPedido] = useState(null);
   const [items, setItems] = useState([]);
   const [cantidadesDespacho, setCantidadesDespacho] = useState({});
+  const [itemEstados, setItemEstados] = useState({}); // { [id]: 'PENDIENTE' | 'CONFIRMADO' | 'RECHAZADO' }
   const [observacionesItem, setObservacionesItem] = useState({});
   const [observacionGeneral, setObservacionGeneral] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -53,16 +53,31 @@ export default function ModalDespachoPedido({
         setPedido(ped);
         setItems(itms);
 
-        // Inicializar cantidades de despacho con lo solicitado o lo que ya se registró
         const initCant = {};
+        const initEstados = {};
         const initObs = {};
+
         itms.forEach((it) => {
           const id = it.Detalle_Pedido_ProductosId;
-          const cantPrevia = it.cantidad_despachada != null ? Number(it.cantidad_despachada) : Number(it.cantidad_solicitada);
-          initCant[id] = cantPrevia;
+          const solicitada = Number(it.cantidad_solicitada || 0);
+          const despPrevia = it.cantidad_despachada != null ? Number(it.cantidad_despachada) : solicitada;
+          
+          initCant[id] = despPrevia;
           initObs[id] = it.observacion_item || '';
+
+          if (it.estado_item === 'NO_DISPONIBLE' || despPrevia === 0) {
+            initEstados[id] = 'RECHAZADO';
+          } else if (it.estado_item === 'VERIFICADO_OK' || despPrevia === solicitada) {
+            initEstados[id] = 'CONFIRMADO';
+          } else if (it.estado_item === 'CON_FALTANTE' || (despPrevia > 0 && despPrevia < solicitada)) {
+            initEstados[id] = 'FALTANTE';
+          } else {
+            initEstados[id] = 'PENDIENTE';
+          }
         });
+
         setCantidadesDespacho(initCant);
+        setItemEstados(initEstados);
         setObservacionesItem(initObs);
         setObservacionGeneral(ped.PedidoObservacionDespacho || '');
       } else {
@@ -80,12 +95,10 @@ export default function ModalDespachoPedido({
     }
   };
 
+  // Cambio de cantidad manual en el input
   const handleCambiarCantidad = (detalleId, valor, solicitada) => {
     if (valor === '') {
-      setCantidadesDespacho((prev) => ({
-        ...prev,
-        [detalleId]: ''
-      }));
+      setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: '' }));
       return;
     }
 
@@ -93,44 +106,68 @@ export default function ModalDespachoPedido({
     const num = parseFloat(valor);
 
     if (isNaN(num) || num < 0) {
-      setCantidadesDespacho((prev) => ({
-        ...prev,
-        [detalleId]: 0
-      }));
+      setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: 0 }));
+      setItemEstados((prev) => ({ ...prev, [detalleId]: 'RECHAZADO' }));
       return;
     }
 
-    // Validación estricta: No se puede despachar más de la cantidad solicitada
+    // Validación estricta: No se puede despachar más de lo solicitado en el pedido
     if (num > maxSolicitada) {
       sileo.warning({
         title: 'Límite Máximo Superado',
         description: `No puedes despachar ${num}. El pedido solicita un máximo de ${maxSolicitada} unidades.`
       });
-      setCantidadesDespacho((prev) => ({
-        ...prev,
-        [detalleId]: maxSolicitada
-      }));
+      setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: maxSolicitada }));
+      setItemEstados((prev) => ({ ...prev, [detalleId]: 'CONFIRMADO' }));
       return;
     }
 
-    setCantidadesDespacho((prev) => ({
+    setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: num }));
+    setItemEstados((prev) => ({
       ...prev,
-      [detalleId]: num
+      [detalleId]: num === maxSolicitada ? 'CONFIRMADO' : num > 0 ? 'FALTANTE' : 'RECHAZADO'
     }));
   };
 
-  const handleSetCantidad = (detalleId, cantidad) => {
-    setCantidadesDespacho((prev) => ({
-      ...prev,
-      [detalleId]: cantidad
-    }));
+  // Acción 1: CONFIRMAR Ítem individual
+  const handleConfirmarItem = (it) => {
+    const id = it.Detalle_Pedido_ProductosId;
+    const solicitada = Number(it.cantidad_solicitada || 0);
+    const valor = cantidadesDespacho[id] === '' ? solicitada : Number(cantidadesDespacho[id] || 0);
+    const cantFinal = Math.min(solicitada, Math.max(0, valor));
+
+    setCantidadesDespacho((prev) => ({ ...prev, [id]: cantFinal }));
+
+    if (cantFinal === solicitada) {
+      setItemEstados((prev) => ({ ...prev, [id]: 'CONFIRMADO' }));
+      sileo.success({
+        title: 'Ítem Verificado 100%',
+        description: `${it.producto_nombre}: ${cantFinal} unidades listas para despacho.`
+      });
+    } else if (cantFinal > 0) {
+      setItemEstados((prev) => ({ ...prev, [id]: 'FALTANTE' }));
+      sileo.warning({
+        title: 'Ítem con Faltante',
+        description: `${it.producto_nombre}: Despacho parcial de ${cantFinal} de ${solicitada} solicitadas.`
+      });
+    } else {
+      setItemEstados((prev) => ({ ...prev, [id]: 'RECHAZADO' }));
+      sileo.warning({
+        title: 'Ítem Sin Stock',
+        description: `${it.producto_nombre}: Marcado con 0 unidades.`
+      });
+    }
   };
 
-  const handleCambiarObsItem = (detalleId, obs) => {
-    setObservacionesItem((prev) => ({
-      ...prev,
-      [detalleId]: obs
-    }));
+  // Acción 2: RECHAZAR Ítem individual (Agotado / Sin stock)
+  const handleRechazarItem = (it) => {
+    const id = it.Detalle_Pedido_ProductosId;
+    setCantidadesDespacho((prev) => ({ ...prev, [id]: 0 }));
+    setItemEstados((prev) => ({ ...prev, [id]: 'RECHAZADO' }));
+    sileo.warning({
+      title: 'Ítem Rechazado / Sin Stock',
+      description: `${it.producto_nombre} marcado como no disponible (0 unidades a entregar).`
+    });
   };
 
   // Cálculos dinámicos
@@ -189,31 +226,8 @@ export default function ModalDespachoPedido({
     };
   }, [items, cantidadesDespacho, pedido]);
 
-  // Acción 1: Cancelar Preparación (Vuelve a PENDIENTE_DESPACHO)
-  const handleCancelarPreparacion = async () => {
-    setIsSubmitting(true);
-    try {
-      const res = await api.despacho.cancelarPreparacion(pedidoId, observacionGeneral);
-      if (res?.success) {
-        sileo.info({
-          title: 'Preparación Cancelada',
-          description: `El pedido ${pedidoId} volvió a estado PENDIENTE_DESPACHO.`
-        });
-        if (onDespachoFinalizado) onDespachoFinalizado();
-        onClose();
-      }
-    } catch (err) {
-      sileo.error({
-        title: 'Error',
-        description: err.message || 'No se pudo cancelar la preparación.'
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Acción 2: Confirmar Despacho 100% Completo
-  const handleDespachoCompleto = async () => {
+  // CERRAR DESPACHO DE LA ORDEN (Botón verde principal)
+  const handleCerrarDespacho = async () => {
     if (calculos.hayExcesos) {
       sileo.error({
         title: 'Cantidad Inválida',
@@ -222,26 +236,45 @@ export default function ModalDespachoPedido({
       return;
     }
 
-    if (calculos.hayFaltantes) {
-      sileo.warning({
-        title: 'Faltantes Detectados',
-        description: 'Existen productos con cantidad menor a la solicitada. Usa "Despacho con Faltante".'
-      });
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      const res = await api.despacho.completar(pedidoId, {
-        observacion: observacionGeneral.trim() || undefined
-      });
-      if (res?.success) {
-        sileo.success({
-          title: 'Despacho Completo Exitoso',
-          description: `Pedido ${pedidoId} despachado al 100%. PODE = 1, PRS = 0.`
+      if (calculos.hayFaltantes) {
+        // Cierre con Faltante aceptado por el cliente
+        const obsFinal = observacionGeneral.trim() || `Despacho con faltante acordado con el cliente. ${calculos.cantItemsConFaltante} ítem(s) con faltante auditado.`;
+        const payload = {
+          observacion: obsFinal,
+          items: items.map((it) => {
+            const id = it.Detalle_Pedido_ProductosId;
+            return {
+              detalle_id: id,
+              cantidad_despachada: cantidadesDespacho[id] === '' ? 0 : Number(cantidadesDespacho[id] || 0),
+              observacion: observacionesItem[id] || (itemEstados[id] === 'RECHAZADO' ? 'Sin stock en almacén' : undefined)
+            };
+          })
+        };
+
+        const res = await api.despacho.faltante(pedidoId, payload);
+        if (res?.success) {
+          sileo.success({
+            title: 'Despacho con Faltante Cerrado',
+            description: `Pedido ${pedidoId} entregado conforme con consentimiento del cliente. PODE = 1, PRS = 1.`
+          });
+          if (onDespachoFinalizado) onDespachoFinalizado();
+          onClose();
+        }
+      } else {
+        // Cierre 100% Completo
+        const res = await api.despacho.completar(pedidoId, {
+          observacion: observacionGeneral.trim() || undefined
         });
-        if (onDespachoFinalizado) onDespachoFinalizado();
-        onClose();
+        if (res?.success) {
+          sileo.success({
+            title: 'Despacho Completo Exitoso',
+            description: `Pedido ${pedidoId} despachado al 100%. PODE = 1, PRS = 0.`
+          });
+          if (onDespachoFinalizado) onDespachoFinalizado();
+          onClose();
+        }
       }
     } catch (err) {
       if (err.status === 409) {
@@ -253,8 +286,8 @@ export default function ModalDespachoPedido({
         onClose();
       } else {
         sileo.error({
-          title: 'Error en Despacho',
-          description: err.message || 'No se pudo completar el despacho.'
+          title: 'Error al Cerrar Despacho',
+          description: err.message || 'No se pudo completar el cierre del pedido.'
         });
       }
     } finally {
@@ -262,82 +295,14 @@ export default function ModalDespachoPedido({
     }
   };
 
-  // Acción 3: Confirmar Despacho con Faltante (Cliente Acepta)
-  const handleDespachoConFaltante = async () => {
-    if (calculos.hayExcesos) {
-      sileo.error({
-        title: 'Cantidad Inválida',
-        description: 'No se puede registrar el despacho: hay productos con cantidad superior a la solicitada.'
-      });
-      return;
-    }
-
-    if (!calculos.hayFaltantes) {
-      sileo.info({
-        title: 'Sin Faltantes',
-        description: 'Todos los productos están completos. Puedes confirmar como Despacho 100% Completo.'
-      });
-      return;
-    }
-
-    if (!observacionGeneral.trim() || observacionGeneral.trim().length < 5) {
-      sileo.warning({
-        title: 'Observación Obligatoria',
-        description: 'Ingresa una observación detallada explicando la aceptación del faltante por parte del cliente.'
-      });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        observacion: observacionGeneral.trim(),
-        items: items.map((it) => {
-          const id = it.Detalle_Pedido_ProductosId;
-          return {
-            detalle_id: id,
-            cantidad_despachada: cantidadesDespacho[id] === '' ? 0 : Number(cantidadesDespacho[id] || 0),
-            observacion: observacionesItem[id] || undefined
-          };
-        })
-      };
-
-      const res = await api.despacho.faltante(pedidoId, payload);
-      if (res?.success) {
-        sileo.success({
-          title: 'Despacho con Faltante Registrado',
-          description: `Pedido ${pedidoId} cerrado conforme con consentimiento del cliente. PODE = 1, PRS = 1.`
-        });
-        if (onDespachoFinalizado) onDespachoFinalizado();
-        onClose();
-      }
-    } catch (err) {
-      if (err.status === 409) {
-        sileo.warning({
-          title: 'Pedido Ya Procesado',
-          description: 'Este pedido ya cuenta con un cierre registrado.'
-        });
-        if (onDespachoFinalizado) onDespachoFinalizado();
-        onClose();
-      } else {
-        sileo.error({
-          title: 'Error al Cerrar',
-          description: err.message || 'No se pudo registrar el despacho con faltante.'
-        });
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Acción 4: Confirmar Rechazo desde el submodal
+  // RECHAZO TOTAL POR DESISTIMIENTO (Cliente desiste porque faltó producto)
   const handleConfirmarRechazo = async (payload) => {
     try {
       const res = await api.despacho.rechazar(pedidoId, payload);
       if (res?.success) {
         sileo.info({
-          title: 'Pedido Rechazado y Stock Reintegrado',
-          description: `Pedido ${pedidoId} anulado por falta de stock. PODE = 0, PRS = 1.`
+          title: 'Pedido Anulado por Desistimiento',
+          description: `Pedido ${pedidoId} cancelado por falta de stock. Todo el stock fue reintegrado. PODE = 0, PRS = 1.`
         });
         if (onDespachoFinalizado) onDespachoFinalizado();
         onClose();
@@ -364,39 +329,30 @@ export default function ModalDespachoPedido({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 flex items-center justify-center p-3 md:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
-        <div className="relative w-full max-w-5xl max-h-[92vh] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden my-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+        <div className="bg-white w-full max-w-5xl rounded-2xl border border-slate-200 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden p-6 space-y-4">
           
-          {/* Cabecera del Modal */}
-          <div className="p-5 border-b border-slate-100 bg-white flex items-center justify-between shrink-0">
+          {/* HEADER DEL MODAL (Estilo captura oficial) */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shadow-2xs">
                 <PackageCheck className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-800">
-                    Despacho y Verificación de Mercadería
+                  <h2 className="text-lg font-bold text-slate-800">
+                    Despacho Oficial de Mercadería
                   </h2>
-                  <span className="px-2 py-0.5 text-xs font-mono font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
                     {pedidoId}
                   </span>
-                  {pedido?.PedidoEstadoDespacho && (
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
-                      pedido.PedidoEstadoDespacho === 'EN_PREPARACION'
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                        : pedido.PedidoEstadoDespacho === 'ENTREGADO_COMPLETO'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : pedido.PedidoEstadoDespacho === 'ENTREGADO_CON_FALTANTE'
-                        ? 'bg-orange-50 text-orange-700 border-orange-200'
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                    }`}>
-                      {pedido.PedidoEstadoDespacho}
-                    </span>
-                  )}
                 </div>
-                <p className="text-xs text-slate-500">
-                  Valida existencias físicas en almacén ítem por ítem antes de entregar al cliente
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cliente: <span className="font-semibold text-slate-700">{pedido?.ClienteNombre || '—'}</span>
+                  {' • '}
+                  Canal: <span className="font-medium text-slate-600">{pedido?.canal || 'Tienda Presencial'}</span>
+                  {' • '}
+                  Fecha: <span className="font-mono text-slate-600">{pedido?.PedidoFecha ? pedido.PedidoFecha.substring(0, 10) : '—'}</span>
                 </p>
               </div>
             </div>
@@ -410,55 +366,24 @@ export default function ModalDespachoPedido({
             </button>
           </div>
 
-          {/* Subcabecera con información del pedido */}
-          {pedido && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-slate-400 shrink-0" />
-                <div className="truncate">
-                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Cliente</p>
-                  <p className="font-bold text-slate-800 truncate">{pedido.ClienteNombre}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
-                <div className="truncate">
-                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Canal de Venta</p>
-                  <p className="font-bold text-slate-800">{pedido.canal || 'Tienda Presencial'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Truck className="w-4 h-4 text-slate-400 shrink-0" />
-                <div className="truncate">
-                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Modalidad</p>
-                  <p className="font-bold text-slate-800">
-                    {pedido.PedidoEsDelivery === 'S' ? 'Delivery a Domicilio' : 'Recojo en Mostrador'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-slate-400 shrink-0" />
-                <div className="truncate">
-                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Total Original</p>
-                  <p className="font-bold text-emerald-600">
-                    S/ {Number(pedido.PedidoTotal || 0).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* BANNER INFORMATIVO (Estilo captura) */}
+          <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2.5 shrink-0">
+            <Clock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <p>
+              <strong>Control de Salida Ítem por Ítem:</strong> Valida existencias físicas antes de entregar. Los productos confirmados se despachan al cliente, y los faltantes o rechazados se auditan para el cálculo del indicador PRS.
+            </p>
+          </div>
 
-          {/* Contenido scrolleable: Grilla de Ítems */}
-          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 min-h-0">
+          {/* TABLA PRINCIPAL DE ÍTEMS */}
+          <div className="flex-1 overflow-y-auto space-y-4">
             {isLoading ? (
               <div className="py-16 text-center text-slate-400">
-                <RotateCcw className="w-8 h-8 mx-auto text-blue-600 animate-spin mb-3" />
-                <p className="text-xs">Cargando ítems y existencias de almacén...</p>
+                <RotateCcw className="w-7 h-7 animate-spin mx-auto mb-2 text-blue-600" />
+                <p className="text-xs">Cargando detalles del pedido...</p>
               </div>
             ) : items.length === 0 ? (
-              <div className="py-16 text-center text-slate-400 text-xs">
-                <Boxes className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                <p className="font-semibold text-slate-600">No se encontraron ítems en este pedido.</p>
+              <div className="py-12 text-center text-slate-400 text-xs">
+                No se encontraron ítems en este pedido.
               </div>
             ) : (
               <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
@@ -466,12 +391,13 @@ export default function ModalDespachoPedido({
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       <th className="py-3 px-3.5">Producto</th>
-                      <th className="py-3 px-3 text-center">U.M.</th>
-                      <th className="py-3 px-3 text-right">Stock Almacén</th>
-                      <th className="py-3 px-3 text-right">Solicitado</th>
-                      <th className="py-3 px-3 text-center min-w-[150px]">A Despachar</th>
-                      <th className="py-3 px-3 text-center">Estado Ítem</th>
-                      <th className="py-3 px-3 text-right">Subtotal Real</th>
+                      <th className="py-3 px-2 text-center">Presentación</th>
+                      <th className="py-3 px-3 text-center">Solicitado</th>
+                      <th className="py-3 px-3 text-center">Despachado</th>
+                      <th className="py-3 px-3 text-center">Pendiente</th>
+                      <th className="py-3 px-3 text-center">Estado</th>
+                      <th className="py-3 px-3 text-center">A Despachar</th>
+                      <th className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -479,95 +405,125 @@ export default function ModalDespachoPedido({
                       const id = it.Detalle_Pedido_ProductosId;
                       const solicitada = Number(it.cantidad_solicitada || 0);
                       const despachada = cantidadesDespacho[id] === '' ? 0 : Number(cantidadesDespacho[id] || 0);
-                      const stockActual = Number(it.stock_actual || 0);
-                      const precioUnit = Number(it.precio_unitario || 0);
-                      const subtotalReal = despachada * precioUnit;
                       const faltante = Math.max(0, solicitada - despachada);
+                      const estadoItem = itemEstados[id] || (despachada === 0 ? 'RECHAZADO' : despachada === solicitada ? 'CONFIRMADO' : 'FALTANTE');
+                      const esRechazado = estadoItem === 'RECHAZADO' || despachada === 0;
+                      const esCompleto = estadoItem === 'CONFIRMADO' && faltante === 0 && despachada > 0;
+                      const esFaltante = estadoItem === 'FALTANTE' || (despachada > 0 && despachada < solicitada);
                       const esExceso = despachada > solicitada;
 
-                      const esCompleto = !esExceso && faltante === 0 && despachada > 0;
-                      const esParcial = !esExceso && faltante > 0 && despachada > 0;
-                      const esAgotado = despachada === 0;
-
                       return (
-                        <tr key={id} className="hover:bg-slate-50/70 transition-colors">
+                        <tr
+                          key={id}
+                          className={
+                            esRechazado
+                              ? 'bg-rose-50/30 opacity-90'
+                              : esCompleto
+                              ? 'bg-emerald-50/20'
+                              : 'hover:bg-blue-50/30'
+                          }
+                        >
+                          {/* Producto */}
                           <td className="py-3 px-3.5">
-                            <p className="font-bold text-slate-800">{it.producto_nombre}</p>
-                            <span className="text-[10px] font-mono text-slate-400">
-                              {it.producto_id}
-                            </span>
+                            <div className="font-bold text-slate-800">{it.producto_nombre}</div>
+                            <div className="text-[11px] font-mono text-slate-400">{it.producto_id}</div>
                           </td>
-                          <td className="py-3 px-3 text-center">
-                            <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold font-mono bg-slate-100 text-slate-700 border border-slate-200">
+
+                          {/* Presentación */}
+                          <td className="py-3 px-2 text-center">
+                            <span className="font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg inline-block text-[11px]">
                               {it.unidad_medida || 'UND'}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold">
-                            <span className={stockActual < solicitada ? 'text-rose-600' : 'text-slate-700'}>
-                              {stockActual}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-700">
+
+                          {/* Solicitado */}
+                          <td className="py-3 px-3 text-center font-bold text-slate-700">
                             {solicitada}
                           </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <input
-                                type="number"
-                                min="0"
-                                max={solicitada}
-                                step="any"
-                                value={cantidadesDespacho[id] ?? ''}
-                                onChange={(e) => handleCambiarCantidad(id, e.target.value, solicitada)}
-                                className={`w-20 px-2 py-1 text-center font-mono font-bold text-xs rounded-lg border bg-slate-50 focus:outline-hidden disabled:opacity-40 ${
-                                  esExceso
-                                    ? 'border-rose-500 text-rose-700 bg-rose-50 ring-2 ring-rose-400'
-                                    : esCompleto
-                                    ? 'border-emerald-300 text-emerald-700 focus:border-emerald-500'
-                                    : esParcial
-                                    ? 'border-amber-300 text-amber-700 focus:border-amber-500'
-                                    : 'border-rose-300 text-rose-700 focus:border-rose-500'
-                                }`}
-                              />
-                              <button
-                                type="button"
-                                title="Fijar al 100%"
-                                onClick={() => handleSetCantidad(id, solicitada)}
-                                className="px-1.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-200 transition cursor-pointer"
-                              >
-                                Max
-                              </button>
-                              <button
-                                type="button"
-                                title="Marcar 0 (Agotado)"
-                                onClick={() => handleSetCantidad(id, 0)}
-                                className="px-1.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-rose-50 text-rose-600 rounded-lg border border-slate-200 hover:border-rose-200 transition cursor-pointer"
-                              >
-                                0
-                              </button>
-                            </div>
+
+                          {/* Despachado */}
+                          <td className="py-3 px-3 text-center">
+                            <span className={`font-bold ${esRechazado ? 'text-rose-600' : esCompleto ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {despachada}
+                            </span>
                           </td>
+
+                          {/* Pendiente / Faltante */}
+                          <td className="py-3 px-3 text-center">
+                            <span className={`font-bold ${faltante > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                              {faltante}
+                            </span>
+                          </td>
+
+                          {/* Estado Pill */}
                           <td className="py-3 px-3 text-center">
                             {esExceso ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
-                                <XCircle className="w-3 h-3 text-rose-600" /> Excede (+{(despachada - solicitada).toFixed(2)})
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                <XCircle className="w-3 h-3 text-rose-600" /> Excede Pedido
+                              </span>
+                            ) : esRechazado ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                <XCircle className="w-3 h-3 text-rose-600" /> Sin Stock
                               </span>
                             ) : esCompleto ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Completo
                               </span>
-                            ) : esParcial ? (
+                            ) : esFaltante ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <AlertTriangle className="w-3 h-3 text-amber-600" /> Faltante (-{faltante})
+                                <AlertTriangle className="w-3 h-3 text-amber-600" /> Con Faltante
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                <XCircle className="w-3 h-3 text-rose-600" /> Agotado (-{faltante})
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                Pendiente
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                            S/ {subtotalReal.toFixed(2)}
+
+                          {/* A Despachar (Input) */}
+                          <td className="py-3 px-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={solicitada}
+                              step="any"
+                              value={cantidadesDespacho[id] ?? ''}
+                              onChange={(e) => handleCambiarCantidad(id, e.target.value, solicitada)}
+                              className={`w-20 bg-slate-50 border rounded-lg px-2 py-1 text-center font-bold text-xs focus:outline-hidden ${
+                                esExceso
+                                  ? 'border-rose-500 text-rose-700 bg-rose-50 ring-2 ring-rose-400'
+                                  : esCompleto
+                                  ? 'border-emerald-300 text-emerald-700 focus:border-emerald-500'
+                                  : esFaltante
+                                  ? 'border-amber-300 text-amber-700 focus:border-amber-500'
+                                  : 'border-slate-200 text-slate-800 focus:border-blue-500'
+                              }`}
+                            />
+                          </td>
+
+                          {/* Acción (Confirmar y Rechazar idénticos a captura) */}
+                          <td className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmarItem(it)}
+                                title="Confirmar despacho de este ítem"
+                                className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Confirmar</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRechazarItem(it)}
+                                title="Marcar sin stock / Rechazar este ítem"
+                                className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              >
+                                <X className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Rechazar</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -576,133 +532,68 @@ export default function ModalDespachoPedido({
                 </table>
               </div>
             )}
-
-            {/* Panel de Alerta si hay descuadres */}
-            {calculos.hayFaltantes && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-800 space-y-1">
-                  <p className="font-bold">
-                    Se detectaron faltantes físicos en {calculos.cantItemsConFaltante} ítem(s):
-                  </p>
-                  <p>
-                    Si el cliente acepta recibir el pedido con los productos disponibles, se recalculará el monto a cobrar a{' '}
-                    <strong className="font-mono">S/ {calculos.totalDespachado.toFixed(2)}</strong> y se auditará la rotura en el indicador PRS (PODE = 1).
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Campo de Observaciones Generales de Despacho */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                Observaciones del Despacho / Acuerdo con el Cliente:
-                {calculos.hayFaltantes && <span className="text-amber-600 ml-1">*(Obligatorio en faltante)</span>}
-              </label>
-              <input
-                type="text"
-                value={observacionGeneral}
-                onChange={(e) => setObservacionGeneral(e.target.value)}
-                placeholder={
-                  calculos.hayFaltantes
-                    ? 'Ej: Cliente Juan Pérez aceptó llevar 8 unidades de Aceite por rotura en almacén...'
-                    : 'Observaciones opcionales del picking o salida...'
-                }
-                className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500 focus:bg-white transition"
-              />
-            </div>
           </div>
 
-          {/* Pie de Totales y Acciones */}
-          <div className="px-5 sm:px-6 py-4 border-t border-slate-100 bg-white shrink-0 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/70">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <div>
-                  <span className="text-slate-400">Total Solicitado: </span>
-                  <span className="font-mono font-bold text-slate-800">
-                    S/ {calculos.totalOriginal.toFixed(2)}
+          {/* FOOTER DEL MODAL (Estilo captura oficial) */}
+          <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            {/* Mensaje de alerta a la izquierda */}
+            <div className="flex items-center gap-2 text-xs">
+              {calculos.hayFaltantes ? (
+                <div className="flex items-center gap-2 text-amber-700 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    Hay ítems con faltante o sin stock. Al cerrar se registrará como <strong>"Entregado con Faltante"</strong> (PODE = 1, PRS = 1).
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-400">Total a Despachar: </span>
-                  <span className={`font-mono font-extrabold ${calculos.hayFaltantes ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    S/ {calculos.totalDespachado.toFixed(2)}
+              ) : (
+                <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>
+                    Todos los ítems verificados conformes al 100%. Despacho completo conforme.
                   </span>
                 </div>
-                {calculos.hayFaltantes && (
-                  <div>
-                    <span className="text-slate-400">Diferencia no cobrada: </span>
-                    <span className="font-mono font-bold text-rose-600">
-                      - S/ {calculos.diferenciaTotal.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
-            {/* Barra de Botones */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {pedido?.PedidoEstadoDespacho === 'EN_PREPARACION' && (
-                  <button
-                    type="button"
-                    onClick={handleCancelarPreparacion}
-                    disabled={isSubmitting}
-                    className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-                  >
-                    Cancelar Preparación (Liberar)
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowModalRechazo(true)}
-                  disabled={isSubmitting}
-                  className="px-3 py-2 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition border border-rose-200 cursor-pointer disabled:opacity-50"
-                >
-                  Cliente Desiste (Rechazar)
-                </button>
-              </div>
+            {/* Botones de acción a la derecha */}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Salir sin Cerrar
+              </button>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-                >
-                  Cerrar
-                </button>
+              <button
+                type="button"
+                onClick={() => setShowModalRechazo(true)}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                title="El cliente no acepta llevar el pedido incompleto"
+              >
+                Cliente Desiste (Rechazar)
+              </button>
 
-                {calculos.hayFaltantes ? (
-                  <button
-                    type="button"
-                    onClick={handleDespachoConFaltante}
-                    disabled={isSubmitting}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                    )}
-                    <span>Despachar con Faltante (Cliente Acepta)</span>
-                  </button>
+              <button
+                type="button"
+                disabled={isSubmitting || isLoading}
+                onClick={handleCerrarDespacho}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                {isSubmitting ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin" />
+                    <span>Cerrando Despacho...</span>
+                  </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleDespachoCompleto}
-                    disabled={isSubmitting}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    )}
-                    <span>Confirmar Despacho 100% Completo</span>
-                  </button>
+                  <>
+                    <PackageCheck className="w-4 h-4" />
+                    <span>Cerrar Despacho de la Orden</span>
+                  </>
                 )}
-              </div>
+              </button>
             </div>
           </div>
 

@@ -137,9 +137,11 @@ export default function GestionDespachoPedidos() {
         );
       case 'RECHAZADO_ROTURA':
       case 'RECHAZADO':
+      case 'NO_DESPACHADO':
+      case 'DEVUELTO':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <XCircle className="w-3.5 h-3.5 text-rose-500" /> Rechazado (Rotura)
+            <XCircle className="w-3.5 h-3.5 text-rose-500" /> {estado === 'RECHAZADO_ROTURA' ? 'Rechazado (Rotura)' : estado === 'NO_DESPACHADO' ? 'No Despachado' : estado === 'DEVUELTO' ? 'Devuelto' : 'Rechazado'}
           </span>
         );
       case 'ENTREGADO_PARCIAL':
@@ -151,6 +153,20 @@ export default function GestionDespachoPedidos() {
       case 'PENDIENTE':
       case 'PENDIENTE_DESPACHO':
       default:
+        if (tieneFaltante === 'C') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Entregado 100%
+            </span>
+          );
+        }
+        if (tieneFaltante === 'A') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+              <XCircle className="w-3.5 h-3.5 text-rose-500" /> Rechazado
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
             <Clock className="w-3.5 h-3.5 text-blue-500" /> Por Despachar
@@ -300,7 +316,7 @@ export default function GestionDespachoPedidos() {
               <tbody className="divide-y divide-slate-100">
                 {pedidos.map((p) => {
                   const estado = p.PedidoEstadoDespacho;
-                  const esCerrado = ['ENTREGADO_COMPLETO', 'ENTREGADO_CON_FALTANTE', 'RECHAZADO_ROTURA', 'RECHAZADO', 'DEVUELTO'].includes(estado);
+                  const esCerrado = ['ENTREGADO_COMPLETO', 'ENTREGADO_CON_FALTANTE', 'RECHAZADO_ROTURA', 'RECHAZADO', 'DEVUELTO', 'NO_DESPACHADO', 'ENTREGADO_PARCIAL'].includes(estado) || p.PedidoEstado !== 'P';
                   const enPrep = estado === 'EN_PREPARACION';
 
                   return (
@@ -363,7 +379,7 @@ export default function GestionDespachoPedidos() {
 
                       {/* Estado */}
                       <td className="py-3.5 px-4 text-center">
-                        {renderBadgeEstado(estado, p.PedidoTieneFaltante)}
+                        {renderBadgeEstado(estado, p.PedidoEstado)}
                       </td>
 
                       {/* Acciones */}
