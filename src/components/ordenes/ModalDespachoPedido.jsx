@@ -13,7 +13,8 @@ import {
   Boxes,
   Building2,
   DollarSign,
-  ArrowRight
+  ArrowRight,
+  Eye
 } from 'lucide-react';
 import { sileo } from 'sileo';
 import api from '../../services/api';
@@ -36,6 +37,17 @@ export default function ModalDespachoPedido({
   
   // Modal de rechazo por desistimiento
   const [showModalRechazo, setShowModalRechazo] = useState(false);
+
+  // Determinar si el pedido ya fue finalizado (modo solo lectura para Ver Detalle)
+  const esCerrado = useMemo(() => {
+    const estadoDespacho = pedido?.PedidoEstadoDespacho;
+    const estadoPedido = pedido?.PedidoEstado;
+    return (
+      ['ENTREGADO_COMPLETO', 'ENTREGADO_CON_FALTANTE', 'RECHAZADO_ROTURA', 'RECHAZADO', 'DEVUELTO', 'NO_DESPACHADO', 'ENTREGADO_PARCIAL'].includes(estadoDespacho) ||
+      estadoPedido === 'C' ||
+      estadoPedido === 'A'
+    );
+  }, [pedido]);
 
   useEffect(() => {
     if (isOpen && pedidoId) {
@@ -341,7 +353,7 @@ export default function ModalDespachoPedido({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-slate-800">
-                    Despacho Oficial de Mercadería
+                    {esCerrado ? 'Detalle de Despacho de Mercadería' : 'Despacho Oficial de Mercadería'}
                   </h2>
                   <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
                     {pedidoId}
@@ -367,12 +379,25 @@ export default function ModalDespachoPedido({
           </div>
 
           {/* BANNER INFORMATIVO (Estilo captura) */}
-          <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2.5 shrink-0">
-            <Clock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <p>
-              <strong>Control de Salida Ítem por Ítem:</strong> Valida existencias físicas antes de entregar. Los productos confirmados se despachan al cliente, y los faltantes o rechazados se auditan para el cálculo del indicador PRS.
-            </p>
-          </div>
+          {esCerrado ? (
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs text-slate-700 flex items-start gap-2.5 shrink-0">
+              <Eye className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+              <p>
+                <strong>Registro de Despacho (Solo Lectura):</strong> Este pedido ya fue procesado y cerrado como{' '}
+                <strong className="text-slate-900">{pedido?.PedidoEstadoDespacho || 'CERRADO'}</strong>
+                {pedido?.PedidoFechaFinDespacho ? ` el ${pedido.PedidoFechaFinDespacho.substring(0, 16).replace('T', ' ')}` : ''}
+                {pedido?.PedidoCerradoPor ? ` por ${pedido.PedidoCerradoPor}` : ''}.
+                {pedido?.PedidoObservacionDespacho ? ` Obs: "${pedido.PedidoObservacionDespacho}".` : ''}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2.5 shrink-0">
+              <Clock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <p>
+                <strong>Control de Salida Ítem por Ítem:</strong> Valida existencias físicas antes de entregar. Los productos confirmados se despachan al cliente, y los faltantes o rechazados se auditan para el cálculo del indicador PRS.
+              </p>
+            </div>
+          )}
 
           {/* TABLA PRINCIPAL DE ÍTEMS */}
           <div className="flex-1 overflow-y-auto space-y-4">
@@ -394,10 +419,10 @@ export default function ModalDespachoPedido({
                       <th className="py-3 px-2 text-center">Presentación</th>
                       <th className="py-3 px-3 text-center">Solicitado</th>
                       <th className="py-3 px-3 text-center">Despachado</th>
-                      <th className="py-3 px-3 text-center">Pendiente</th>
+                      <th className="py-3 px-3 text-center">{esCerrado ? 'Faltante' : 'Pendiente'}</th>
                       <th className="py-3 px-3 text-center">Estado</th>
-                      <th className="py-3 px-3 text-center">A Despachar</th>
-                      <th className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">Acción</th>
+                      {!esCerrado && <th className="py-3 px-3 text-center">A Despachar</th>}
+                      {!esCerrado && <th className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">Acción</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -480,51 +505,54 @@ export default function ModalDespachoPedido({
                             )}
                           </td>
 
-                          {/* A Despachar (Input) */}
-                          <td className="py-3 px-3 text-center">
-                            <input
-                              type="number"
-                              min="0"
-                              max={solicitada}
-                              step="any"
-                              value={cantidadesDespacho[id] ?? ''}
-                              onChange={(e) => handleCambiarCantidad(id, e.target.value, solicitada)}
-                              className={`w-20 bg-slate-50 border rounded-lg px-2 py-1 text-center font-bold text-xs focus:outline-hidden ${
-                                esExceso
-                                  ? 'border-rose-500 text-rose-700 bg-rose-50 ring-2 ring-rose-400'
-                                  : esCompleto
-                                  ? 'border-emerald-300 text-emerald-700 focus:border-emerald-500'
-                                  : esFaltante
-                                  ? 'border-amber-300 text-amber-700 focus:border-amber-500'
-                                  : 'border-slate-200 text-slate-800 focus:border-blue-500'
-                              }`}
-                            />
-                          </td>
+                          {/* A Despachar y Acción (Solo en modo operativo / no cerrado) */}
+                          {!esCerrado && (
+                            <>
+                              <td className="py-3 px-3 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={solicitada}
+                                  step="any"
+                                  value={cantidadesDespacho[id] ?? ''}
+                                  onChange={(e) => handleCambiarCantidad(id, e.target.value, solicitada)}
+                                  className={`w-20 bg-slate-50 border rounded-lg px-2 py-1 text-center font-bold text-xs focus:outline-hidden ${
+                                    esExceso
+                                      ? 'border-rose-500 text-rose-700 bg-rose-50 ring-2 ring-rose-400'
+                                      : esCompleto
+                                      ? 'border-emerald-300 text-emerald-700 focus:border-emerald-500'
+                                      : esFaltante
+                                      ? 'border-amber-300 text-amber-700 focus:border-amber-500'
+                                      : 'border-slate-200 text-slate-800 focus:border-blue-500'
+                                  }`}
+                                />
+                              </td>
 
-                          {/* Acción (Confirmar y Rechazar idénticos a captura) */}
-                          <td className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleConfirmarItem(it)}
-                                title="Confirmar despacho de este ítem"
-                                className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Confirmar</span>
-                              </button>
+                              <td className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmarItem(it)}
+                                    title="Confirmar despacho de este ítem"
+                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Confirmar</span>
+                                  </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handleRechazarItem(it)}
-                                title="Marcar sin stock / Rechazar este ítem"
-                                className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                              >
-                                <X className="w-3.5 h-3.5 text-rose-600" />
-                                <span>Rechazar</span>
-                              </button>
-                            </div>
-                          </td>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRechazarItem(it)}
+                                    title="Marcar sin stock / Rechazar este ítem"
+                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                  >
+                                    <X className="w-3.5 h-3.5 text-rose-600" />
+                                    <span>Rechazar</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -534,67 +562,106 @@ export default function ModalDespachoPedido({
             )}
           </div>
 
-          {/* FOOTER DEL MODAL (Estilo captura oficial) */}
+          {/* FOOTER DEL MODAL */}
           <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-            {/* Mensaje de alerta a la izquierda */}
-            <div className="flex items-center gap-2 text-xs">
-              {calculos.hayFaltantes ? (
-                <div className="flex items-center gap-2 text-amber-700 font-medium">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span>
-                    Hay ítems con faltante o sin stock. Al cerrar se registrará como <strong>"Entregado con Faltante"</strong> (PODE = 1, PRS = 1).
-                  </span>
+            {esCerrado ? (
+              <>
+                {/* Resumen de totales del pedido cerrado a la izquierda */}
+                <div className="flex flex-wrap items-center gap-3 text-xs">
+                  <div className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-2">
+                    <span className="text-slate-500 font-medium">Total Solicitado:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      S/ {Number(pedido?.PedidoTotal || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-2">
+                    <span className="text-emerald-700 font-medium">Total Despachado:</span>
+                    <span className="font-mono font-bold text-emerald-800">
+                      S/ {Number(pedido?.PedidoTotalDespachado ?? pedido?.PedidoTotal ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                  {pedido?.PedidoTieneFaltante === 'S' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      Cerrado con Faltante de Stock
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 text-emerald-700 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span>
-                    Todos los ítems verificados conformes al 100%. Despacho completo conforme.
-                  </span>
+
+                {/* Único botón a la derecha */}
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <span>Cerrar Detalle</span>
+                  </button>
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                {/* Mensaje de alerta a la izquierda */}
+                <div className="flex items-center gap-2 text-xs">
+                  {calculos.hayFaltantes ? (
+                    <div className="flex items-center gap-2 text-amber-700 font-medium">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>
+                        Hay ítems con faltante o sin stock. Al cerrar se registrará como <strong>"Entregado con Faltante"</strong> (PODE = 1, PRS = 1).
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-emerald-700 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>
+                        Todos los ítems verificados conformes al 100%. Despacho completo conforme.
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-            {/* Botones de acción a la derecha */}
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
-              >
-                Salir sin Cerrar
-              </button>
+                {/* Botones de acción a la derecha */}
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  >
+                    Salir sin Cerrar
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setShowModalRechazo(true)}
-                disabled={isSubmitting}
-                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
-                title="El cliente no acepta llevar el pedido incompleto"
-              >
-                Cliente Desiste (Rechazar)
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowModalRechazo(true)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                    title="El cliente no acepta llevar el pedido incompleto"
+                  >
+                    Cliente Desiste (Rechazar)
+                  </button>
 
-              <button
-                type="button"
-                disabled={isSubmitting || isLoading}
-                onClick={handleCerrarDespacho}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RotateCcw className="w-4 h-4 animate-spin" />
-                    <span>Cerrando Despacho...</span>
-                  </>
-                ) : (
-                  <>
-                    <PackageCheck className="w-4 h-4" />
-                    <span>Cerrar Despacho de la Orden</span>
-                  </>
-                )}
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    disabled={isSubmitting || isLoading}
+                    onClick={handleCerrarDespacho}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RotateCcw className="w-4 h-4 animate-spin" />
+                        <span>Cerrando Despacho...</span>
+                      </>
+                    ) : (
+                      <>
+                        <PackageCheck className="w-4 h-4" />
+                        <span>Cerrar Despacho de la Orden</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
         </div>
