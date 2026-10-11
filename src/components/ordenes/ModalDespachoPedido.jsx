@@ -80,8 +80,39 @@ export default function ModalDespachoPedido({
     }
   };
 
-  const handleCambiarCantidad = (detalleId, valor) => {
-    const num = valor === '' ? '' : Math.max(0, parseFloat(valor) || 0);
+  const handleCambiarCantidad = (detalleId, valor, solicitada) => {
+    if (valor === '') {
+      setCantidadesDespacho((prev) => ({
+        ...prev,
+        [detalleId]: ''
+      }));
+      return;
+    }
+
+    const maxSolicitada = Number(solicitada || 0);
+    const num = parseFloat(valor);
+
+    if (isNaN(num) || num < 0) {
+      setCantidadesDespacho((prev) => ({
+        ...prev,
+        [detalleId]: 0
+      }));
+      return;
+    }
+
+    // Validación estricta: No se puede despachar más de la cantidad solicitada
+    if (num > maxSolicitada) {
+      sileo.warning({
+        title: 'Límite Máximo Superado',
+        description: `No puedes despachar ${num}. El pedido solicita un máximo de ${maxSolicitada} unidades.`
+      });
+      setCantidadesDespacho((prev) => ({
+        ...prev,
+        [detalleId]: maxSolicitada
+      }));
+      return;
+    }
+
     setCantidadesDespacho((prev) => ({
       ...prev,
       [detalleId]: num
@@ -106,8 +137,11 @@ export default function ModalDespachoPedido({
   const calculos = useMemo(() => {
     let totalDespachado = 0;
     let hayFaltantes = false;
+    let hayExcesos = false;
     let cantItemsConFaltante = 0;
+    let cantItemsConExceso = 0;
     const itemsConFaltante = [];
+    const itemsConExceso = [];
 
     items.forEach((it) => {
       const id = it.Detalle_Pedido_ProductosId;
@@ -116,6 +150,16 @@ export default function ModalDespachoPedido({
       const precioUnit = Number(it.precio_unitario || 0);
 
       totalDespachado += cantDespachada * precioUnit;
+
+      if (cantDespachada > cantSolicitada) {
+        hayExcesos = true;
+        cantItemsConExceso++;
+        itemsConExceso.push({
+          ...it,
+          exceso: cantDespachada - cantSolicitada,
+          cantidad_despachada: cantDespachada
+        });
+      }
 
       const faltante = Math.max(0, cantSolicitada - cantDespachada);
       if (faltante > 0) {
@@ -137,8 +181,11 @@ export default function ModalDespachoPedido({
       totalOriginal,
       diferenciaTotal: Math.round(diferenciaTotal * 100) / 100,
       hayFaltantes,
+      hayExcesos,
       cantItemsConFaltante,
-      itemsConFaltante
+      cantItemsConExceso,
+      itemsConFaltante,
+      itemsConExceso
     };
   }, [items, cantidadesDespacho, pedido]);
 
@@ -167,6 +214,14 @@ export default function ModalDespachoPedido({
 
   // Acción 2: Confirmar Despacho 100% Completo
   const handleDespachoCompleto = async () => {
+    if (calculos.hayExcesos) {
+      sileo.error({
+        title: 'Cantidad Inválida',
+        description: 'Existen productos con cantidad mayor a la solicitada. No se puede entregar más de lo pedido.'
+      });
+      return;
+    }
+
     if (calculos.hayFaltantes) {
       sileo.warning({
         title: 'Faltantes Detectados',
@@ -209,6 +264,14 @@ export default function ModalDespachoPedido({
 
   // Acción 3: Confirmar Despacho con Faltante (Cliente Acepta)
   const handleDespachoConFaltante = async () => {
+    if (calculos.hayExcesos) {
+      sileo.error({
+        title: 'Cantidad Inválida',
+        description: 'No se puede registrar el despacho: hay productos con cantidad superior a la solicitada.'
+      });
+      return;
+    }
+
     if (!calculos.hayFaltantes) {
       sileo.info({
         title: 'Sin Faltantes',
@@ -301,38 +364,38 @@ export default function ModalDespachoPedido({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-        <div className="relative w-full max-w-5xl max-h-[92vh] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="fixed inset-0 z-40 flex items-center justify-center p-3 md:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+        <div className="relative w-full max-w-5xl max-h-[92vh] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden my-auto">
           
           {/* Cabecera del Modal */}
-          <div className="p-5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between shrink-0">
+          <div className="p-5 border-b border-slate-100 bg-white flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
                 <PackageCheck className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-slate-100">
+                  <h2 className="text-base font-bold text-slate-800">
                     Despacho y Verificación de Mercadería
                   </h2>
-                  <span className="px-2.5 py-0.5 text-xs font-mono font-semibold bg-slate-800 text-blue-400 border border-blue-500/30 rounded-full">
+                  <span className="px-2 py-0.5 text-xs font-mono font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
                     {pedidoId}
                   </span>
                   {pedido?.PedidoEstadoDespacho && (
-                    <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
                       pedido.PedidoEstadoDespacho === 'EN_PREPARACION'
-                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
                         : pedido.PedidoEstadoDespacho === 'ENTREGADO_COMPLETO'
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : pedido.PedidoEstadoDespacho === 'ENTREGADO_CON_FALTANTE'
-                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                        ? 'bg-orange-50 text-orange-700 border-orange-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
                     }`}>
                       {pedido.PedidoEstadoDespacho}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   Valida existencias físicas en almacén ítem por ítem antes de entregar al cliente
                 </p>
               </div>
@@ -341,7 +404,7 @@ export default function ModalDespachoPedido({
             <button
               onClick={onClose}
               disabled={isSubmitting}
-              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -349,26 +412,26 @@ export default function ModalDespachoPedido({
 
           {/* Subcabecera con información del pedido */}
           {pedido && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-950/60 border-b border-slate-800/80 text-xs shrink-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-slate-400 shrink-0" />
                 <div className="truncate">
-                  <p className="text-[10px] text-slate-500 uppercase">Cliente</p>
-                  <p className="font-medium text-slate-200 truncate">{pedido.ClienteNombre}</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Cliente</p>
+                  <p className="font-bold text-slate-800 truncate">{pedido.ClienteNombre}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
                 <div className="truncate">
-                  <p className="text-[10px] text-slate-500 uppercase">Canal de Venta</p>
-                  <p className="font-medium text-slate-200">{pedido.canal || 'Tienda Presencial'}</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Canal de Venta</p>
+                  <p className="font-bold text-slate-800">{pedido.canal || 'Tienda Presencial'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4 text-slate-400 shrink-0" />
                 <div className="truncate">
-                  <p className="text-[10px] text-slate-500 uppercase">Modalidad</p>
-                  <p className="font-medium text-slate-200">
+                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Modalidad</p>
+                  <p className="font-bold text-slate-800">
                     {pedido.PedidoEsDelivery === 'S' ? 'Delivery a Domicilio' : 'Recojo en Mostrador'}
                   </p>
                 </div>
@@ -376,8 +439,8 @@ export default function ModalDespachoPedido({
               <div className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-slate-400 shrink-0" />
                 <div className="truncate">
-                  <p className="text-[10px] text-slate-500 uppercase">Total Original</p>
-                  <p className="font-medium text-emerald-400">
+                  <p className="text-[10px] text-slate-400 uppercase font-semibold">Total Original</p>
+                  <p className="font-bold text-emerald-600">
                     S/ {Number(pedido.PedidoTotal || 0).toFixed(2)}
                   </p>
                 </div>
@@ -386,32 +449,32 @@ export default function ModalDespachoPedido({
           )}
 
           {/* Contenido scrolleable: Grilla de Ítems */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 min-h-0">
             {isLoading ? (
-              <div className="py-16 text-center">
-                <RotateCcw className="w-8 h-8 mx-auto text-blue-400 animate-spin mb-3" />
-                <p className="text-sm text-slate-400">Cargando ítems y existencias de almacén...</p>
+              <div className="py-16 text-center text-slate-400">
+                <RotateCcw className="w-8 h-8 mx-auto text-blue-600 animate-spin mb-3" />
+                <p className="text-xs">Cargando ítems y existencias de almacén...</p>
               </div>
             ) : items.length === 0 ? (
-              <div className="py-16 text-center text-slate-500">
-                <Boxes className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No se encontraron ítems en este pedido.</p>
+              <div className="py-16 text-center text-slate-400 text-xs">
+                <Boxes className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p className="font-semibold text-slate-600">No se encontraron ítems en este pedido.</p>
               </div>
             ) : (
-              <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40">
+              <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-slate-800/60 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
-                      <th className="py-2.5 px-3">Producto</th>
-                      <th className="py-2.5 px-3 text-center">U.M.</th>
-                      <th className="py-2.5 px-3 text-right">Stock Almacén</th>
-                      <th className="py-2.5 px-3 text-right">Solicitado</th>
-                      <th className="py-2.5 px-3 text-center w-48">A Despachar</th>
-                      <th className="py-2.5 px-3 text-center">Estado Ítem</th>
-                      <th className="py-2.5 px-3 text-right">Subtotal Real</th>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-3.5">Producto</th>
+                      <th className="py-3 px-3 text-center">U.M.</th>
+                      <th className="py-3 px-3 text-right">Stock Almacén</th>
+                      <th className="py-3 px-3 text-right">Solicitado</th>
+                      <th className="py-3 px-3 text-center min-w-[150px]">A Despachar</th>
+                      <th className="py-3 px-3 text-center">Estado Ítem</th>
+                      <th className="py-3 px-3 text-right">Subtotal Real</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60">
+                  <tbody className="divide-y divide-slate-100">
                     {items.map((it) => {
                       const id = it.Detalle_Pedido_ProductosId;
                       const solicitada = Number(it.cantidad_solicitada || 0);
@@ -420,30 +483,31 @@ export default function ModalDespachoPedido({
                       const precioUnit = Number(it.precio_unitario || 0);
                       const subtotalReal = despachada * precioUnit;
                       const faltante = Math.max(0, solicitada - despachada);
+                      const esExceso = despachada > solicitada;
 
-                      const esCompleto = faltante === 0 && despachada > 0;
-                      const esParcial = faltante > 0 && despachada > 0;
+                      const esCompleto = !esExceso && faltante === 0 && despachada > 0;
+                      const esParcial = !esExceso && faltante > 0 && despachada > 0;
                       const esAgotado = despachada === 0;
 
                       return (
-                        <tr key={id} className="hover:bg-slate-800/30 transition-colors">
-                          <td className="py-3 px-3">
-                            <p className="font-medium text-slate-200">{it.producto_nombre}</p>
+                        <tr key={id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3 px-3.5">
+                            <p className="font-bold text-slate-800">{it.producto_nombre}</p>
                             <span className="text-[10px] font-mono text-slate-400">
                               {it.producto_id}
                             </span>
                           </td>
                           <td className="py-3 px-3 text-center">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                            <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold font-mono bg-slate-100 text-slate-700 border border-slate-200">
                               {it.unidad_medida || 'UND'}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono">
-                            <span className={stockActual < solicitada ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
+                          <td className="py-3 px-3 text-right font-mono font-bold">
+                            <span className={stockActual < solicitada ? 'text-rose-600' : 'text-slate-700'}>
                               {stockActual}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-semibold text-slate-200">
+                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-700">
                             {solicitada}
                           </td>
                           <td className="py-3 px-3">
@@ -454,20 +518,22 @@ export default function ModalDespachoPedido({
                                 max={solicitada}
                                 step="any"
                                 value={cantidadesDespacho[id] ?? ''}
-                                onChange={(e) => handleCambiarCantidad(id, e.target.value)}
-                                className={`w-20 px-2 py-1 text-center font-mono text-xs rounded border focus:outline-none ${
-                                  esCompleto
-                                    ? 'bg-slate-950 border-emerald-500/50 text-emerald-300 focus:border-emerald-400'
+                                onChange={(e) => handleCambiarCantidad(id, e.target.value, solicitada)}
+                                className={`w-20 px-2 py-1 text-center font-mono font-bold text-xs rounded-lg border bg-slate-50 focus:outline-hidden disabled:opacity-40 ${
+                                  esExceso
+                                    ? 'border-rose-500 text-rose-700 bg-rose-50 ring-2 ring-rose-400'
+                                    : esCompleto
+                                    ? 'border-emerald-300 text-emerald-700 focus:border-emerald-500'
                                     : esParcial
-                                    ? 'bg-slate-950 border-amber-500/50 text-amber-300 focus:border-amber-400'
-                                    : 'bg-slate-950 border-rose-500/50 text-rose-300 focus:border-rose-400'
+                                    ? 'border-amber-300 text-amber-700 focus:border-amber-500'
+                                    : 'border-rose-300 text-rose-700 focus:border-rose-500'
                                 }`}
                               />
                               <button
                                 type="button"
                                 title="Fijar al 100%"
                                 onClick={() => handleSetCantidad(id, solicitada)}
-                                className="px-1.5 py-1 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"
+                                className="px-1.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-200 transition cursor-pointer"
                               >
                                 Max
                               </button>
@@ -475,28 +541,32 @@ export default function ModalDespachoPedido({
                                 type="button"
                                 title="Marcar 0 (Agotado)"
                                 onClick={() => handleSetCantidad(id, 0)}
-                                className="px-1.5 py-1 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-rose-400 rounded border border-slate-700 transition-colors"
+                                className="px-1.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-rose-50 text-rose-600 rounded-lg border border-slate-200 hover:border-rose-200 transition cursor-pointer"
                               >
                                 0
                               </button>
                             </div>
                           </td>
                           <td className="py-3 px-3 text-center">
-                            {esCompleto ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <CheckCircle2 className="w-3 h-3" /> Completo
+                            {esExceso ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                                <XCircle className="w-3 h-3 text-rose-600" /> Excede (+{(despachada - solicitada).toFixed(2)})
+                              </span>
+                            ) : esCompleto ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Completo
                               </span>
                             ) : esParcial ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                <AlertTriangle className="w-3 h-3" /> Faltante (-{faltante})
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" /> Faltante (-{faltante})
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                                <XCircle className="w-3 h-3" /> Agotado (-{faltante})
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                <XCircle className="w-3 h-3 text-rose-600" /> Agotado (-{faltante})
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-medium text-slate-200">
+                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
                             S/ {subtotalReal.toFixed(2)}
                           </td>
                         </tr>
@@ -509,15 +579,15 @@ export default function ModalDespachoPedido({
 
             {/* Panel de Alerta si hay descuadres */}
             {calculos.hayFaltantes && (
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-xs text-amber-200/90 space-y-1">
-                  <p className="font-semibold text-amber-300">
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800 space-y-1">
+                  <p className="font-bold">
                     Se detectaron faltantes físicos en {calculos.cantItemsConFaltante} ítem(s):
                   </p>
                   <p>
                     Si el cliente acepta recibir el pedido con los productos disponibles, se recalculará el monto a cobrar a{' '}
-                    <strong className="text-white font-mono">S/ {calculos.totalDespachado.toFixed(2)}</strong> y se auditará la rotura en el indicador PRS (PODE = 1).
+                    <strong className="font-mono">S/ {calculos.totalDespachado.toFixed(2)}</strong> y se auditará la rotura en el indicador PRS (PODE = 1).
                   </p>
                 </div>
               </div>
@@ -525,9 +595,9 @@ export default function ModalDespachoPedido({
 
             {/* Campo de Observaciones Generales de Despacho */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 Observaciones del Despacho / Acuerdo con el Cliente:
-                {calculos.hayFaltantes && <span className="text-amber-400 ml-1">*(Obligatorio en faltante)</span>}
+                {calculos.hayFaltantes && <span className="text-amber-600 ml-1">*(Obligatorio en faltante)</span>}
               </label>
               <input
                 type="text"
@@ -538,31 +608,31 @@ export default function ModalDespachoPedido({
                     ? 'Ej: Cliente Juan Pérez aceptó llevar 8 unidades de Aceite por rotura en almacén...'
                     : 'Observaciones opcionales del picking o salida...'
                 }
-                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500 focus:bg-white transition"
               />
             </div>
           </div>
 
           {/* Pie de Totales y Acciones */}
-          <div className="p-4 border-t border-slate-800 bg-slate-950/80 shrink-0 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-              <div className="flex items-center gap-4">
+          <div className="px-5 sm:px-6 py-4 border-t border-slate-100 bg-white shrink-0 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <div>
                   <span className="text-slate-400">Total Solicitado: </span>
-                  <span className="font-mono font-medium text-slate-200">
+                  <span className="font-mono font-bold text-slate-800">
                     S/ {calculos.totalOriginal.toFixed(2)}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-400">Total a Despachar: </span>
-                  <span className={`font-mono font-bold ${calculos.hayFaltantes ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  <span className={`font-mono font-extrabold ${calculos.hayFaltantes ? 'text-amber-600' : 'text-emerald-600'}`}>
                     S/ {calculos.totalDespachado.toFixed(2)}
                   </span>
                 </div>
                 {calculos.hayFaltantes && (
                   <div>
                     <span className="text-slate-400">Diferencia no cobrada: </span>
-                    <span className="font-mono text-rose-400">
+                    <span className="font-mono font-bold text-rose-600">
                       - S/ {calculos.diferenciaTotal.toFixed(2)}
                     </span>
                   </div>
@@ -578,7 +648,7 @@ export default function ModalDespachoPedido({
                     type="button"
                     onClick={handleCancelarPreparacion}
                     disabled={isSubmitting}
-                    className="px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+                    className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
                   >
                     Cancelar Preparación (Liberar)
                   </button>
@@ -587,7 +657,7 @@ export default function ModalDespachoPedido({
                   type="button"
                   onClick={() => setShowModalRechazo(true)}
                   disabled={isSubmitting}
-                  className="px-3 py-2 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition-colors border border-rose-500/30"
+                  className="px-3 py-2 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition border border-rose-200 cursor-pointer disabled:opacity-50"
                 >
                   Cliente Desiste (Rechazar)
                 </button>
@@ -598,7 +668,7 @@ export default function ModalDespachoPedido({
                   type="button"
                   onClick={onClose}
                   disabled={isSubmitting}
-                  className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
                 >
                   Cerrar
                 </button>
@@ -608,7 +678,7 @@ export default function ModalDespachoPedido({
                     type="button"
                     onClick={handleDespachoConFaltante}
                     disabled={isSubmitting}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-900 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 rounded-lg shadow-lg shadow-amber-900/30 transition-all font-semibold disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <RotateCcw className="w-3.5 h-3.5 animate-spin" />
@@ -622,7 +692,7 @@ export default function ModalDespachoPedido({
                     type="button"
                     onClick={handleDespachoCompleto}
                     disabled={isSubmitting}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-lg shadow-emerald-900/30 transition-all disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <RotateCcw className="w-3.5 h-3.5 animate-spin" />

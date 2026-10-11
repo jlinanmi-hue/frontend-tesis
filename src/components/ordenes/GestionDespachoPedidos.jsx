@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   PackageCheck,
   Search,
-  Filter,
   RefreshCw,
   Clock,
   Boxes,
@@ -13,8 +12,6 @@ import {
   User,
   ArrowRight,
   Eye,
-  Calendar,
-  Building2,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -22,6 +19,8 @@ import { sileo } from 'sileo';
 import api from '../../services/api';
 import DespachoKPICards from './DespachoKPICards';
 import ModalDespachoPedido from './ModalDespachoPedido';
+import StyledSelect from '../dashboard/filters/StyledSelect';
+import StyledDatePicker from '../common/StyledDatePicker';
 
 export default function GestionDespachoPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -39,7 +38,7 @@ export default function GestionDespachoPedidos() {
     current_page: 1,
     last_page: 1,
     total: 0,
-    per_page: 15
+    per_page: 10
   });
 
   // Modal de Despacho
@@ -67,7 +66,7 @@ export default function GestionDespachoPedidos() {
           current_page: paginatedData.current_page || 1,
           last_page: paginatedData.last_page || 1,
           total: paginatedData.total || 0,
-          per_page: paginatedData.per_page || 15
+          per_page: paginatedData.per_page || 10
         });
       } else {
         throw new Error(res?.message || 'Error al listar pedidos');
@@ -120,41 +119,41 @@ export default function GestionDespachoPedidos() {
     switch (estado) {
       case 'EN_PREPARACION':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse">
-            <Boxes className="w-3.5 h-3.5" /> En Preparación
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <Boxes className="w-3.5 h-3.5 text-amber-500" /> En Preparación
           </span>
         );
       case 'ENTREGADO_COMPLETO':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Entregado 100%
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Entregado 100%
           </span>
         );
       case 'ENTREGADO_CON_FALTANTE':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-            <AlertTriangle className="w-3.5 h-3.5" /> Entregado con Faltante
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+            <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Entregado con Faltante
           </span>
         );
       case 'RECHAZADO_ROTURA':
       case 'RECHAZADO':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-            <XCircle className="w-3.5 h-3.5" /> Rechazado (Rotura)
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle className="w-3.5 h-3.5 text-rose-500" /> Rechazado (Rotura)
           </span>
         );
       case 'ENTREGADO_PARCIAL':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
-            <AlertTriangle className="w-3.5 h-3.5" /> Entregado Parcial
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Entregado Parcial
           </span>
         );
       case 'PENDIENTE':
       case 'PENDIENTE_DESPACHO':
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-            <Clock className="w-3.5 h-3.5" /> Por Despachar
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <Clock className="w-3.5 h-3.5 text-blue-500" /> Por Despachar
           </span>
         );
     }
@@ -163,242 +162,290 @@ export default function GestionDespachoPedidos() {
   return (
     <div className="space-y-6">
       
-      {/* Título de la sección */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <PackageCheck className="w-6 h-6 text-blue-400" />
-            Despacho y Verificación de Pedidos
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Gestión logística de salida: verificación física de inventario antes de la entrega y auditoría de roturas
-          </p>
+      {/* HEADER DE LA SECCIÓN */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shadow-2xs">
+              <PackageCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                Despacho y Verificación de Pedidos
+              </h1>
+              <p className="text-xs text-slate-500">
+                Gestión logística de salida: verificación física de inventario antes de la entrega y auditoría de roturas
+              </p>
+            </div>
+          </div>
         </div>
 
         <button
           onClick={() => cargarPedidos(paginacion.current_page)}
           disabled={isLoading}
-          className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 rounded-xl transition-all self-start sm:self-auto cursor-pointer"
+          className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-2 transition cursor-pointer self-start md:self-auto disabled:opacity-50"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-400' : ''}`} />
-          <span>Actualizar</span>
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
+          <span>Actualizar Lista</span>
         </button>
       </div>
 
       {/* Tarjetas KPI en vivo */}
       <DespachoKPICards kpis={kpis} onFiltroRapido={handleFiltroRapido} />
 
-      {/* Barra de Filtros */}
-      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          
-          {/* Búsqueda */}
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por orden o cliente..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
+      {/* FILTROS Y BUSCADOR */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        {/* BUSCADOR */}
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && cargarPedidos(1)}
+            placeholder="Buscar por orden o cliente..."
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3.5 py-2 text-xs text-slate-700 focus:outline-hidden focus:border-blue-500 transition"
+          />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+        </div>
 
-          {/* Filtro Estado */}
-          <div>
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value="">Todos los Estados</option>
-              <option value="PENDIENTE">Por Despachar (Pendientes)</option>
-              <option value="EN_PREPARACION">En Preparación (Picking)</option>
-              <option value="ENTREGADO_COMPLETO">Entregado 100% Conforme</option>
-              <option value="ENTREGADO_CON_FALTANTE">Entregado con Faltante</option>
-              <option value="RECHAZADO_ROTURA">Rechazado por Rotura</option>
-            </select>
-          </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* SELECTOR DE ESTADOS */}
+          <StyledSelect
+            value={filtroEstado}
+            onChange={(v) => setFiltroEstado(v)}
+            options={[
+              { value: '', label: 'Todos los Estados' },
+              { value: 'PENDIENTE', label: 'Por Despachar (Pendientes)' },
+              { value: 'EN_PREPARACION', label: 'En Preparación (Picking)' },
+              { value: 'ENTREGADO_COMPLETO', label: 'Entregado 100% Conforme' },
+              { value: 'ENTREGADO_CON_FALTANTE', label: 'Entregado con Faltante' },
+              { value: 'RECHAZADO_ROTURA', label: 'Rechazado por Rotura' },
+            ]}
+            panelWidth={240}
+            ariaLabel="Filtrar por estado de despacho"
+          />
 
-          {/* Fecha Desde */}
-          <div>
-            <input
-              type="date"
+          {/* RANGO DE FECHAS */}
+          <div className="flex items-center gap-2">
+            <StyledDatePicker
               value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-blue-500"
+              onChange={(v) => setFechaDesde(v)}
+              size="sm"
+              max={fechaHasta || undefined}
+              ariaLabel="Fecha desde"
             />
-          </div>
-
-          {/* Fecha Hasta */}
-          <div>
-            <input
-              type="date"
+            <span className="text-slate-400 text-xs">a</span>
+            <StyledDatePicker
               value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-blue-500"
+              onChange={(v) => setFechaHasta(v)}
+              size="sm"
+              min={fechaDesde || undefined}
+              ariaLabel="Fecha hasta"
             />
           </div>
 
+          {(searchTerm || filtroEstado || fechaDesde || fechaHasta) && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setFiltroEstado('');
+                setFechaDesde('');
+                setFechaHasta('');
+              }}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition cursor-pointer"
+            >
+              Limpiar
+            </button>
+          )}
+
+          <button
+            onClick={() => cargarPedidos(1)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Buscar</span>
+          </button>
         </div>
       </div>
 
-      {/* Tabla de Pedidos */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
-                <th className="py-3 px-4">Orden</th>
-                <th className="py-3 px-4">Cliente</th>
-                <th className="py-3 px-4">Canal</th>
-                <th className="py-3 px-4">Modalidad</th>
-                <th className="py-3 px-4">Fecha Pedido</th>
-                <th className="py-3 px-4 text-right">Total Pedido</th>
-                <th className="py-3 px-4 text-right">Total Despachado</th>
-                <th className="py-3 px-4 text-center">Estado Despacho</th>
-                <th className="py-3 px-4 text-center">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 mx-auto animate-spin text-blue-400 mb-2" />
-                    Cargando pedidos de despacho...
-                  </td>
+      {/* TABLA PRINCIPAL DE PEDIDOS */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        {isLoading ? (
+          <div className="py-24 text-center text-slate-400">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-600" />
+            <p className="text-xs font-medium">Cargando pedidos de despacho...</p>
+          </div>
+        ) : pedidos.length === 0 ? (
+          <div className="py-20 text-center text-slate-400 space-y-2">
+            <Boxes className="w-10 h-10 mx-auto text-slate-300" />
+            <p className="text-sm font-semibold text-slate-600">No se encontraron pedidos</p>
+            <p className="text-xs text-slate-400">Intenta cambiar los términos de búsqueda o filtros de estado.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+                  <th className="py-3.5 px-4">Orden</th>
+                  <th className="py-3.5 px-4">Cliente</th>
+                  <th className="py-3.5 px-4">Canal</th>
+                  <th className="py-3.5 px-4">Modalidad</th>
+                  <th className="py-3.5 px-4">Fecha Pedido</th>
+                  <th className="py-3.5 px-4 text-right">Total Pedido</th>
+                  <th className="py-3.5 px-4 text-right">Total Despachado</th>
+                  <th className="py-3.5 px-4 text-center">Estado Despacho</th>
+                  <th className="py-3.5 px-4 text-center">Acción</th>
                 </tr>
-              ) : pedidos.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
-                    <Boxes className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    No se encontraron pedidos con los filtros aplicados.
-                  </td>
-                </tr>
-              ) : (
-                pedidos.map((p) => {
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pedidos.map((p) => {
                   const estado = p.PedidoEstadoDespacho;
                   const esCerrado = ['ENTREGADO_COMPLETO', 'ENTREGADO_CON_FALTANTE', 'RECHAZADO_ROTURA', 'RECHAZADO', 'DEVUELTO'].includes(estado);
                   const enPrep = estado === 'EN_PREPARACION';
 
                   return (
-                    <tr key={p.PedidoId} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={p.PedidoId} className="hover:bg-slate-50/70 transition-colors">
                       {/* Código */}
-                      <td className="py-3 px-4 font-mono font-bold text-blue-400">
+                      <td className="py-3.5 px-4 font-mono font-bold text-blue-600">
                         {p.PedidoId}
                       </td>
 
                       {/* Cliente */}
-                      <td className="py-3 px-4">
-                        <p className="font-medium text-slate-200">{p.ClienteNombre}</p>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-800">{p.ClienteNombre}</div>
                         {p.ClienteTelefono && (
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
                             <User className="w-2.5 h-2.5" /> {p.ClienteTelefono}
                           </span>
                         )}
                       </td>
 
                       {/* Canal */}
-                      <td className="py-3 px-4 text-slate-300">
-                        <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-[10px]">
+                      <td className="py-3.5 px-4">
+                        <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 text-[11px]">
                           {p.canal || 'Tienda Presencial'}
                         </span>
                       </td>
 
                       {/* Modalidad */}
-                      <td className="py-3 px-4">
+                      <td className="py-3.5 px-4">
                         {p.PedidoEsDelivery === 'S' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                             <Truck className="w-3 h-3" /> Delivery
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-800/60 border border-slate-700 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                             Mostrador
                           </span>
                         )}
                       </td>
 
                       {/* Fecha */}
-                      <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">
+                      <td className="py-3.5 px-4 text-slate-600 font-medium font-mono text-[11px]">
                         {p.PedidoFecha ? p.PedidoFecha.substring(0, 16).replace('T', ' ') : '—'}
                       </td>
 
                       {/* Total Original */}
-                      <td className="py-3 px-4 text-right font-mono font-medium text-slate-200">
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-800">
                         S/ {Number(p.PedidoTotal || 0).toFixed(2)}
                       </td>
 
                       {/* Total Despachado */}
-                      <td className="py-3 px-4 text-right font-mono font-bold">
+                      <td className="py-3.5 px-4 text-right font-mono font-bold">
                         {p.PedidoTotalDespachado != null ? (
-                          <span className={p.PedidoTieneFaltante === 'S' ? 'text-amber-400' : 'text-emerald-400'}>
+                          <span className={p.PedidoTieneFaltante === 'S' ? 'text-amber-600' : 'text-emerald-600'}>
                             S/ {Number(p.PedidoTotalDespachado).toFixed(2)}
                           </span>
                         ) : (
-                          <span className="text-slate-500">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
                       {/* Estado */}
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-4 text-center">
                         {renderBadgeEstado(estado, p.PedidoTieneFaltante)}
                       </td>
 
                       {/* Acciones */}
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-4 text-center">
                         {esCerrado ? (
                           <button
                             onClick={() => handleVerDetalle(p)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer text-xs"
+                            title="Ver detalle del despacho"
                           >
-                            <Eye className="w-3 h-3" /> Ver
+                            <Eye className="w-4 h-4" />
+                            <span className="font-semibold">Ver</span>
                           </button>
                         ) : enPrep ? (
                           <button
                             onClick={() => handleAbrirDespacho(p)}
-                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-lg shadow-md shadow-blue-900/30 transition-all cursor-pointer font-semibold animate-pulse"
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
                           >
                             <span>Continuar</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         ) : (
                           <button
                             onClick={() => handleAbrirDespacho(p)}
-                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-slate-900 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 rounded-lg shadow-md shadow-amber-900/20 transition-all cursor-pointer font-semibold"
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
                           >
                             <span>Despachar</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-        {/* Barra de Paginación */}
-        {paginacion.total > 0 && (
-          <div className="flex items-center justify-between p-3.5 border-t border-slate-800 text-xs text-slate-400 bg-slate-950/40">
-            <div>
-              Mostrando página <span className="text-slate-200 font-medium">{paginacion.current_page}</span> de{' '}
-              <span className="text-slate-200 font-medium">{paginacion.last_page}</span> ({paginacion.total} pedidos)
+        {/* PAGINACIÓN estilo captura: Filas por página + < 1 / 2 > */}
+        {!isLoading && (
+          <div className="px-4 py-3 bg-white border-t border-slate-200 flex items-center justify-end gap-4 text-xs text-slate-500 rounded-b-2xl">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">Filas por página:</span>
+              <StyledSelect
+                value={paginacion.per_page}
+                onChange={(v) => {
+                  setPaginacion((prev) => ({
+                    ...prev,
+                    per_page: Number(v),
+                    current_page: 1,
+                  }));
+                }}
+                options={[
+                  { value: 10, label: '10' },
+                  { value: 25, label: '25' },
+                  { value: 50, label: '50' },
+                ]}
+                panelWidth={200}
+                ariaLabel="Filas por página"
+              />
             </div>
 
             <div className="flex items-center gap-1">
               <button
-                disabled={paginacion.current_page <= 1 || isLoading}
+                disabled={paginacion.current_page <= 1}
                 onClick={() => cargarPedidos(paginacion.current_page - 1)}
-                className="p-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                title="Página anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
+
+              <span className="px-2 font-medium text-slate-700 tabular-nums">
+                {paginacion.current_page} / {paginacion.last_page || 1}
+              </span>
+
               <button
-                disabled={paginacion.current_page >= paginacion.last_page || isLoading}
+                disabled={paginacion.current_page >= (paginacion.last_page || 1)}
                 onClick={() => cargarPedidos(paginacion.current_page + 1)}
-                className="p-1.5 rounded-lg border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                title="Página siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>

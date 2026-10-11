@@ -59,28 +59,28 @@ export default function ModalRechazoDespacho({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-rose-500/30 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden my-auto">
         
         {/* Cabecera */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-rose-500/10">
+        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
+            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-200">
               <XCircle className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-slate-100">
+              <h3 className="text-base font-bold text-slate-800">
                 Rechazar Despacho por Falta de Stock
               </h3>
-              <p className="text-xs text-rose-300">
-                Orden: <span className="font-mono font-bold text-white">{pedidoId}</span>
+              <p className="text-xs text-slate-500">
+                Orden: <span className="font-mono font-extrabold text-slate-800">{pedidoId}</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -89,33 +89,33 @@ export default function ModalRechazoDespacho({
         {/* Cuerpo */}
         <div className="p-6 space-y-4">
           {/* Advertencia Académica y Operativa */}
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-200/90 space-y-1">
-              <p className="font-semibold text-amber-300">
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-800 space-y-1">
+              <p className="font-bold">
                 Impacto Operativo y en Indicadores Oficiales:
               </p>
-              <ul className="list-disc list-inside space-y-0.5 text-slate-300">
-                <li>El pedido pasará a estado <span className="font-mono text-rose-400">RECHAZADO_ROTURA</span> (Anulado).</li>
-                <li>Se reintegrarán <strong className="text-emerald-400">todas las unidades</strong> al stock físico de inventario.</li>
-                <li>Impacto en KPIs: <strong className="text-rose-400">PODE = 0</strong> y <strong className="text-amber-400">PRS = 1</strong>.</li>
+              <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                <li>El pedido pasará a estado <span className="font-mono font-bold text-rose-600">RECHAZADO_ROTURA</span> (Anulado).</li>
+                <li>Se reintegrarán <strong className="text-emerald-600">todas las unidades</strong> al stock físico de inventario.</li>
+                <li>Impacto en KPIs: <strong className="text-rose-600">PODE = 0</strong> y <strong className="text-amber-600">PRS = 1</strong>.</li>
               </ul>
             </div>
           </div>
 
           {/* Selector de Motivo */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-2">
+            <label className="block text-xs font-semibold text-slate-600 mb-2">
               Motivo del Desistimiento del Cliente:
             </label>
             <div className="space-y-2">
               {MOTIVOS_PREDETERMINADOS.map((motivo, idx) => (
                 <label
                   key={idx}
-                  className={`flex items-start gap-2.5 p-3 rounded-lg border text-xs cursor-pointer transition-all ${
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition-all ${
                     !esOtroMotivo && motivoSeleccionado === motivo
-                      ? 'border-rose-500/50 bg-rose-500/10 text-slate-100'
-                      : 'border-slate-800 bg-slate-800/40 text-slate-400 hover:border-slate-700'
+                      ? 'border-rose-300 bg-rose-50/70 text-slate-800'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
                   }`}
                 >
                   <input
@@ -126,17 +126,17 @@ export default function ModalRechazoDespacho({
                       setEsOtroMotivo(false);
                       setMotivoSeleccionado(motivo);
                     }}
-                    className="mt-0.5 text-rose-500 focus:ring-rose-500"
+                    className="mt-0.5 accent-rose-600"
                   />
-                  <span>{motivo}</span>
+                  <span className="font-medium">{motivo}</span>
                 </label>
               ))}
 
               <label
-                className={`flex items-start gap-2.5 p-3 rounded-lg border text-xs cursor-pointer transition-all ${
+                className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition-all ${
                   esOtroMotivo
-                    ? 'border-rose-500/50 bg-rose-500/10 text-slate-100'
-                    : 'border-slate-800 bg-slate-800/40 text-slate-400 hover:border-slate-700'
+                    ? 'border-rose-300 bg-rose-50/70 text-slate-800'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
                 }`}
               >
                 <input
@@ -144,9 +144,9 @@ export default function ModalRechazoDespacho({
                   name="motivo_rechazo"
                   checked={esOtroMotivo}
                   onChange={() => setEsOtroMotivo(true)}
-                  className="mt-0.5 text-rose-500 focus:ring-rose-500"
+                  className="mt-0.5 accent-rose-600"
                 />
-                <span>Otro motivo específico...</span>
+                <span className="font-medium">Otro motivo específico...</span>
               </label>
             </div>
           </div>
@@ -154,7 +154,7 @@ export default function ModalRechazoDespacho({
           {/* Campo de texto libre si selecciona "Otro motivo" */}
           {esOtroMotivo && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 Especifique la causa del rechazo:
               </label>
               <textarea
@@ -162,19 +162,19 @@ export default function ModalRechazoDespacho({
                 onChange={(e) => setMotivoPersonalizado(e.target.value)}
                 placeholder="Detalle por qué el cliente no aceptó la entrega..."
                 rows={3}
-                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-rose-400 focus:bg-white transition"
               />
             </div>
           )}
         </div>
 
         {/* Pie de Acciones */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-800 bg-slate-950/60">
+        <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-100 bg-white">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -182,7 +182,7 @@ export default function ModalRechazoDespacho({
             type="button"
             onClick={handleConfirmar}
             disabled={isSubmitting}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-rose-600 hover:bg-rose-500 active:bg-rose-700 rounded-lg shadow-lg shadow-rose-900/30 transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
