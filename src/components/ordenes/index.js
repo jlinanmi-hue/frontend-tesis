@@ -6,3 +6,7 @@ export { default as ModalHistorialRecepcion } from './ModalHistorialRecepcion';
 export { default as ModalCompraRapida } from './ModalCompraRapida';
 export { default as ModalProductoExpress } from './ModalProductoExpress';
 export { default as GestionRecepcionMercaderia } from './GestionRecepcionMercaderia';
+export { default as GestionDespachoPedidos } from './GestionDespachoPedidos';
+export { default as ModalDespachoPedido } from './ModalDespachoPedido';
+export { default as ModalRechazoDespacho } from './ModalRechazoDespacho';
+export { default as DespachoKPICards } from './DespachoKPICards';

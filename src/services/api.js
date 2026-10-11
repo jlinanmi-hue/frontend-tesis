@@ -1185,4 +1185,23 @@ api.predicciones = {
   },
 };
 
+/**
+ * Módulo: Despacho y Verificación de Pedidos de Clientes
+ */
+api.despacho = {
+  listar: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    ).toString();
+    return request(`/despacho/pedidos${qs ? `?${qs}` : ''}`);
+  },
+  obtener: (id) => request(`/despacho/pedidos/${id}`),
+  iniciar: (id) => request(`/despacho/pedidos/${id}/iniciar`, { method: 'POST' }),
+  cancelarPreparacion: (id, motivo = '') => request(`/despacho/pedidos/${id}/cancelar-preparacion`, { method: 'POST', body: { motivo } }),
+  completar: (id, payload = {}) => request(`/despacho/pedidos/${id}/completar`, { method: 'POST', body: payload }),
+  faltante: (id, payload) => request(`/despacho/pedidos/${id}/faltante`, { method: 'POST', body: payload }),
+  rechazar: (id, payload) => request(`/despacho/pedidos/${id}/rechazar`, { method: 'POST', body: payload }),
+};
+
 export default api;
+

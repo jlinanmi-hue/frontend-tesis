@@ -36,7 +36,7 @@ import { GestionRoles, GestionCargos } from './seguridad';
 import { GestionProductos, GestionMovimientos, GestionAjustesInventario } from './inventario';
 import { GestionClientes } from './clientes';
 import { GestionProveedores } from './proveedores';
-import { GestionOrdenesCompra, GestionOrdenesCliente, GestionRecepcionMercaderia } from './ordenes';
+import { GestionOrdenesCompra, GestionOrdenesCliente, GestionRecepcionMercaderia, GestionDespachoPedidos } from './ordenes';
 import PrediccionesCompra from './ordenes/PrediccionesCompra';
 import GestionEmpresa from './empresa/GestionEmpresa';
 import MiCuenta from './cuenta/MiCuenta';
@@ -539,6 +539,23 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
                     <button
                       onClick={() => {
                         setActiveMenu('ordenes');
+                        setActiveSubMenu('ordenes_despacho');
+                      }}
+                      className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
+                        activeMenu === 'ordenes' && activeSubMenu === 'ordenes_despacho'
+                          ? 'bg-slate-800/90 text-blue-400 font-medium'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeMenu === 'ordenes' && activeSubMenu === 'ordenes_despacho' ? 'bg-blue-400' : 'bg-slate-600'
+                      }`} />
+                      <span className="truncate">Despacho de Pedidos</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setActiveMenu('ordenes');
                         setActiveSubMenu('ordenes_predicciones');
                       }}
                       className={`w-full flex items-center gap-2.5 pl-8 pr-3 py-1.5 rounded-md text-xs transition-colors duration-150 cursor-pointer ${
@@ -897,6 +914,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
             />
           ) : (activeMenu === 'ordenes' && activeSubMenu === 'ordenes_recepcion') || (activeMenu === 'inventario' && activeSubMenu === 'inventario_recepcion') ? (
             <GestionRecepcionMercaderia />
+          ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_despacho' ? (
+            <GestionDespachoPedidos />
           ) : activeMenu === 'ordenes' && activeSubMenu === 'ordenes_predicciones' ? (
             <PrediccionesCompra
               onNavigateToOrdenCompra={(prefill) => {
