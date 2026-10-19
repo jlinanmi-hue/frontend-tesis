@@ -281,7 +281,7 @@ export default function Dashboard() {
               <TopCausasProblemas causasData={ejecutivoData?.top_causas} />
             </LazyBlock>
 
-            {/* 9. Bloque 9: Pedidos por Atender (Lista Urgente) */}
+            {/* 9. Bloque 9: Pedidos por Atender (Lista U rgente) */}
             <LazyBlock minHeight={280}>
               <PedidosPorAtenderList
                 pedidosData={ejecutivoData?.pedidos_por_atender}
@@ -309,5 +309,5 @@ export default function Dashboard() {
       )}
 
     </div>
-  );
+        );
 }

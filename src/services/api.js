@@ -647,6 +647,13 @@ export const api = {
     },
     siguienteCodigo: () => request('/ordenes-compra/siguiente-codigo'),
     estados: () => request('/ordenes-compra/estados'),
+    precarga: (producto, cantidad) => {
+      const params = new URLSearchParams();
+      if (producto) params.append('producto', producto);
+      if (cantidad) params.append('cantidad', cantidad);
+      const query = params.toString();
+      return request(`/ordenes-compra/precarga${query ? `?${query}` : ''}`);
+    },
     obtener: (id) => request(`/ordenes-compra/${id}`),
     crear: (datos) =>
       request('/ordenes-compra', {
@@ -1121,6 +1128,16 @@ export const api = {
         method: 'POST',
         body: datos,
       }),
+    enviarManual: (datos) =>
+      request('/notificaciones/enviar-manual', {
+        method: 'POST',
+        body: datos,
+      }),
+    motivos: () => request('/notificaciones/motivos'),
+    buscarUsuarios: (q = '') => {
+      const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+      return request(`/notificaciones/buscar-usuarios${qs}`);
+    },
   },
 };
 

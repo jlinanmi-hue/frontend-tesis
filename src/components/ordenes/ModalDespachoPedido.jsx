@@ -141,34 +141,37 @@ export default function ModalDespachoPedido({
     }));
   };
 
-  // Acción 1: CONFIRMAR Ítem individual
+  // Acción 1: CONFIRMAR Ítem individual o Despacho Completo
   const handleConfirmarItem = (it) => {
     const id = it.Detalle_Pedido_ProductosId;
     const solicitada = Number(it.cantidad_solicitada || 0);
     const valor = cantidadesDespacho[id] === '' ? solicitada : Number(cantidadesDespacho[id] || 0);
     const cantFinal = Math.min(solicitada, Math.max(0, valor));
 
-    setCantidadesDespacho((prev) => ({ ...prev, [id]: cantFinal }));
+    const newCantidades = { ...cantidadesDespacho, [id]: cantFinal };
+    setCantidadesDespacho(newCantidades);
 
-    if (cantFinal === solicitada) {
-      setItemEstados((prev) => ({ ...prev, [id]: 'CONFIRMADO' }));
-      sileo.success({
-        title: 'Ítem Verificado 100%',
-        description: `${it.producto_nombre}: ${cantFinal} unidades listas para despacho.`
-      });
-    } else if (cantFinal > 0) {
-      setItemEstados((prev) => ({ ...prev, [id]: 'FALTANTE' }));
-      sileo.warning({
-        title: 'Ítem con Faltante',
-        description: `${it.producto_nombre}: Despacho parcial de ${cantFinal} de ${solicitada} solicitadas.`
-      });
-    } else {
-      setItemEstados((prev) => ({ ...prev, [id]: 'RECHAZADO' }));
-      sileo.warning({
-        title: 'Ítem Sin Stock',
-        description: `${it.producto_nombre}: Marcado con 0 unidades.`
-      });
+    const nuevoEstado = cantFinal === solicitada ? 'CONFIRMADO' : cantFinal > 0 ? 'FALTANTE' : 'RECHAZADO';
+    const newEstados = { ...itemEstados, [id]: nuevoEstado };
+    setItemEstados(newEstados);
+
+    // Si el pedido tiene 1 solo ítem O todos los ítems ya están completos/verificados,
+    // procesar el despacho de inmediato para que la acción del usuario sea efectiva.
+    const todosListos = items.every((otherIt) => {
+      const oId = otherIt.Detalle_Pedido_ProductosId;
+      const st = oId === id ? nuevoEstado : (newEstados[oId] || itemEstados[oId]);
+      return st === 'CONFIRMADO' || st === 'FALTANTE';
+    });
+
+    if (items.length === 1 || todosListos) {
+      ejecutarCierreDespacho(newCantidades, newEstados);
+      return;
     }
+
+    sileo.success({
+      title: 'Ítem Verificado Conforme',
+      description: `${it.producto_nombre}: ${cantFinal} de ${solicitada} unidades verificadas.`
+    });
   };
 
   // Acción 2: RECHAZAR Ítem individual (Agotado / Sin stock)
@@ -177,7 +180,7 @@ export default function ModalDespachoPedido({
     setCantidadesDespacho((prev) => ({ ...prev, [id]: 0 }));
     setItemEstados((prev) => ({ ...prev, [id]: 'RECHAZADO' }));
     sileo.warning({
-      title: 'Ítem Rechazado / Sin Stock',
+      title: 'Ítem Sin Stock / Rechazado',
       description: `${it.producto_nombre} marcado como no disponible (0 unidades a entregar).`
     });
   };
@@ -238,9 +241,24 @@ export default function ModalDespachoPedido({
     };
   }, [items, cantidadesDespacho, pedido]);
 
-  // CERRAR DESPACHO DE LA ORDEN (Botón verde principal)
-  const handleCerrarDespacho = async () => {
-    if (calculos.hayExcesos) {
+  // EJECUTAR CONFIRMACIÓN Y CIERRE DE DESPACHO
+  const ejecutarCierreDespacho = async (cants = cantidadesDespacho, ests = itemEstados) => {
+    let hayFaltantes = false;
+    let hayExcesos = false;
+    let cantItemsConFaltante = 0;
+
+    items.forEach((it) => {
+      const id = it.Detalle_Pedido_ProductosId;
+      const cantSolicitada = Number(it.cantidad_solicitada || 0);
+      const cantDespachada = cants[id] === '' ? 0 : Number(cants[id] || 0);
+      if (cantDespachada > cantSolicitada) hayExcesos = true;
+      if (cantDespachada < cantSolicitada) {
+        hayFaltantes = true;
+        cantItemsConFaltante++;
+      }
+    });
+
+    if (hayExcesos) {
       sileo.error({
         title: 'Cantidad Inválida',
         description: 'Existen productos con cantidad mayor a la solicitada. No se puede entregar más de lo pedido.'
@@ -250,17 +268,17 @@ export default function ModalDespachoPedido({
 
     setIsSubmitting(true);
     try {
-      if (calculos.hayFaltantes) {
+      if (hayFaltantes) {
         // Cierre con Faltante aceptado por el cliente
-        const obsFinal = observacionGeneral.trim() || `Despacho con faltante acordado con el cliente. ${calculos.cantItemsConFaltante} ítem(s) con faltante auditado.`;
+        const obsFinal = observacionGeneral.trim() || `Despacho con faltante acordado con el cliente. ${cantItemsConFaltante} ítem(s) con faltante auditado.`;
         const payload = {
           observacion: obsFinal,
           items: items.map((it) => {
             const id = it.Detalle_Pedido_ProductosId;
             return {
               detalle_id: id,
-              cantidad_despachada: cantidadesDespacho[id] === '' ? 0 : Number(cantidadesDespacho[id] || 0),
-              observacion: observacionesItem[id] || (itemEstados[id] === 'RECHAZADO' ? 'Sin stock en almacén' : undefined)
+              cantidad_despachada: cants[id] === '' ? 0 : Number(cants[id] || 0),
+              observacion: observacionesItem[id] || (ests[id] === 'RECHAZADO' ? 'Sin stock en almacén' : undefined)
             };
           })
         };
@@ -268,8 +286,8 @@ export default function ModalDespachoPedido({
         const res = await api.despacho.faltante(pedidoId, payload);
         if (res?.success) {
           sileo.success({
-            title: 'Despacho con Faltante Cerrado',
-            description: `Pedido ${pedidoId} entregado conforme con consentimiento del cliente. PODE = 1, PRS = 1.`
+            title: 'Despacho con Faltante Confirmado',
+            description: `Pedido ${pedidoId} entregado conforme con consentimiento del cliente.`
           });
           if (onDespachoFinalizado) onDespachoFinalizado();
           onClose();
@@ -281,8 +299,8 @@ export default function ModalDespachoPedido({
         });
         if (res?.success) {
           sileo.success({
-            title: 'Despacho Completo Exitoso',
-            description: `Pedido ${pedidoId} despachado al 100%. PODE = 1, PRS = 0.`
+            title: 'Despacho Confirmado con Éxito',
+            description: `Pedido ${pedidoId} despachado al 100%. Entrega completada.`
           });
           if (onDespachoFinalizado) onDespachoFinalizado();
           onClose();
@@ -292,20 +310,22 @@ export default function ModalDespachoPedido({
       if (err.status === 409) {
         sileo.warning({
           title: 'Operación Previa Detectada',
-          description: 'Este pedido ya fue procesado previamente (Idempotencia).'
+          description: 'Este pedido ya fue procesado previamente.'
         });
         if (onDespachoFinalizado) onDespachoFinalizado();
         onClose();
       } else {
         sileo.error({
-          title: 'Error al Cerrar Despacho',
-          description: err.message || 'No se pudo completar el cierre del pedido.'
+          title: 'Error al Despachar Pedido',
+          description: err.message || 'No se pudo completar el despacho del pedido.'
         });
       }
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const handleCerrarDespacho = () => ejecutarCierreDespacho();
 
   // RECHAZO TOTAL POR DESISTIMIENTO (Cliente desiste porque faltó producto)
   const handleConfirmarRechazo = async (payload) => {
@@ -418,7 +438,7 @@ export default function ModalDespachoPedido({
                       <th className="py-3 px-3.5">Producto</th>
                       <th className="py-3 px-2 text-center">Presentación</th>
                       <th className="py-3 px-3 text-center">Solicitado</th>
-                      <th className="py-3 px-3 text-center">Despachado</th>
+                      {esCerrado && <th className="py-3 px-3 text-center">Despachado</th>}
                       <th className="py-3 px-3 text-center">{esCerrado ? 'Faltante' : 'Pendiente'}</th>
                       <th className="py-3 px-3 text-center">Estado</th>
                       {!esCerrado && <th className="py-3 px-3 text-center">A Despachar</th>}
@@ -466,12 +486,14 @@ export default function ModalDespachoPedido({
                             {solicitada}
                           </td>
 
-                          {/* Despachado */}
-                          <td className="py-3 px-3 text-center">
-                            <span className={`font-bold ${esRechazado ? 'text-rose-600' : esCompleto ? 'text-emerald-600' : 'text-amber-600'}`}>
-                              {despachada}
-                            </span>
-                          </td>
+                          {/* Despachado (solo si el pedido ya fue cerrado previamente) */}
+                          {esCerrado && (
+                            <td className="py-3 px-3 text-center">
+                              <span className={`font-bold ${esRechazado ? 'text-rose-600' : esCompleto ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                {despachada}
+                              </span>
+                            </td>
+                          )}
 
                           {/* Pendiente / Faltante */}
                           <td className="py-3 px-3 text-center">
@@ -533,18 +555,26 @@ export default function ModalDespachoPedido({
                                   <button
                                     type="button"
                                     onClick={() => handleConfirmarItem(it)}
-                                    title="Confirmar despacho de este ítem"
-                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                    disabled={isSubmitting}
+                                    title="Confirmar y despachar este ítem"
+                                    className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                                      items.length === 1
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+                                        : esCompleto
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                                    } disabled:opacity-50`}
                                   >
                                     <Check className="w-3.5 h-3.5" />
-                                    <span>Confirmar</span>
+                                    <span>{items.length === 1 ? 'Confirmar Despacho' : esCompleto ? '✓ Verificado' : 'Confirmar'}</span>
                                   </button>
 
                                   <button
                                     type="button"
                                     onClick={() => handleRechazarItem(it)}
+                                    disabled={isSubmitting}
                                     title="Marcar sin stock / Rechazar este ítem"
-                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
                                   >
                                     <X className="w-3.5 h-3.5 text-rose-600" />
                                     <span>Rechazar</span>
@@ -628,7 +658,7 @@ export default function ModalDespachoPedido({
                     disabled={isSubmitting}
                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer"
                   >
-                    Salir sin Cerrar
+                    Cancelar / Salir
                   </button>
 
                   <button
@@ -636,9 +666,9 @@ export default function ModalDespachoPedido({
                     onClick={() => setShowModalRechazo(true)}
                     disabled={isSubmitting}
                     className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
-                    title="El cliente no acepta llevar el pedido incompleto"
+                    title="El cliente no acepta llevar el pedido incompleto o se cancela la entrega"
                   >
-                    Cliente Desiste (Rechazar)
+                    Rechazar Pedido (Sin Stock)
                   </button>
 
                   <button
@@ -650,12 +680,16 @@ export default function ModalDespachoPedido({
                     {isSubmitting ? (
                       <>
                         <RotateCcw className="w-4 h-4 animate-spin" />
-                        <span>Cerrando Despacho...</span>
+                        <span>Confirmando Despacho...</span>
                       </>
                     ) : (
                       <>
                         <PackageCheck className="w-4 h-4" />
-                        <span>Cerrar Despacho de la Orden</span>
+                        <span>
+                          {calculos.hayFaltantes
+                            ? 'Confirmar Despacho con Faltante'
+                            : 'Confirmar y Despachar Pedido'}
+                        </span>
                       </>
                     )}
                   </button>

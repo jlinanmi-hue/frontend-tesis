@@ -28,6 +28,8 @@ import api from '../../services/api';
 import { sileo } from 'sileo';
 import StyledSelect from '../dashboard/filters/StyledSelect';
 
+const BACKEND_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api').replace(/\/api\/?$/, '');
+
 export default function GestionProductos() {
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -359,7 +361,7 @@ export default function GestionProductos() {
     if (prod.producto_imagen && prod.producto_imagen !== 'Sin imagenes, ') {
       const fullUrl = prod.producto_imagen.startsWith('http')
         ? prod.producto_imagen
-        : `http://127.0.0.1:8000${prod.producto_imagen}`;
+        : `${BACKEND_BASE}${prod.producto_imagen}`;
       setImagePreview(fullUrl);
     } else {
       setImagePreview(null);
@@ -424,7 +426,7 @@ export default function GestionProductos() {
           if (fresh.producto_imagen && fresh.producto_imagen !== 'Sin imagenes, ') {
             const freshUrl = fresh.producto_imagen.startsWith('http')
               ? fresh.producto_imagen
-              : `http://127.0.0.1:8000${fresh.producto_imagen}`;
+              : `${BACKEND_BASE}${fresh.producto_imagen}`;
             setImagePreview(freshUrl);
           }
         }
@@ -1045,7 +1047,7 @@ export default function GestionProductos() {
                               <div className="flex items-start gap-2.5">
                                 {p.producto_imagen && p.producto_imagen !== 'Sin imagenes, ' ? (
                                   <img
-                                    src={p.producto_imagen.startsWith('http') ? p.producto_imagen : `http://127.0.0.1:8000${p.producto_imagen}`}
+                                    src={p.producto_imagen.startsWith('http') ? p.producto_imagen : `${BACKEND_BASE}${p.producto_imagen}`}
                                     alt={p.ProductoNombre}
                                     className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-50"
                                     onError={(e) => { e.currentTarget.style.display = 'none'; }}

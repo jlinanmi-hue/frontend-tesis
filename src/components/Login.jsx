@@ -48,6 +48,7 @@ export default function Login({ onLoginSuccess }) {
               cargo: empleado?.cargo || 'Personal Autorizado',
               empleadoId: empleado?.EmpleadoId,
               usuarioId: userObj?.UsuarioId,
+              rol: userObj?.rol_codigo ?? userObj?.rol ?? null,
               timestamp: new Date().toISOString(),
             };
 

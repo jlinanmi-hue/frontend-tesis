@@ -41,10 +41,12 @@ export default function GestionOrdenesCompra({
   aiPrefill = null, 
   onClearAiPrefill = null, 
   onNavigateToPredicciones = null,
-  onNavigateToRecepcion = null
+  onNavigateToRecepcion = null,
+  initialTab = null,
+  initialSearch = null,
 }) {
   // Pestaña activa: 'nueva' (Generar Orden) | 'historial' (Historial de Órdenes)
-  const [activeTab, setActiveTab] = useState('nueva');
+  const [activeTab, setActiveTab] = useState(initialTab || 'nueva');
 
   // Catálogos principales
   const [proveedoresList, setProveedoresList] = useState([]);
@@ -262,6 +264,19 @@ export default function GestionOrdenesCompra({
       }
     }
   }, [aiPrefill]);
+
+  // Sincronizar pestaña inicial o término de búsqueda desde navegación externa/notificaciones
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (initialSearch !== null && initialSearch !== undefined) {
+      setSearchHistorial(initialSearch);
+    }
+  }, [initialSearch]);
 
   // 2. Escuchar evento en vivo por si el componente ya estaba montado
   useEffect(() => {

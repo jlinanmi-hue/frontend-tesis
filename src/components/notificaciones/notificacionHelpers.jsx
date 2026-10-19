@@ -9,6 +9,7 @@ import {
   PackageCheck,
   ShoppingBag,
   Bell,
+  Megaphone,
 } from 'lucide-react';
 
 /**
@@ -64,6 +65,15 @@ export function getNotificacionStyle(tipo) {
         label: 'Reversión',
         icon: <RotateCcw className="w-4 h-4" />,
       };
+    case 'manual':
+      return {
+        badgeBg: 'bg-violet-50 text-violet-700 border-violet-200',
+        dotColor: 'bg-violet-500',
+        iconBg: 'bg-violet-50 border-violet-200 text-violet-600',
+        borderLeft: 'border-l-violet-500',
+        label: 'Comunicado',
+        icon: <Megaphone className="w-4 h-4" />,
+      };
     default:
       return {
         badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -106,5 +116,17 @@ export function formatearTiempoRelativo(fechaIso) {
     });
   } catch {
     return 'Reciente';
+  }
+}
+
+/**
+ * Devuelve el usuario autenticado guardado por el login (gate del frontend).
+ * Se usa para segmentar la bandeja y habilitar el compositor manual.
+ */
+export function getUsuarioActual() {
+  try {
+    return JSON.parse(localStorage.getItem('userData') || 'null');
+  } catch {
+    return null;
   }
 }

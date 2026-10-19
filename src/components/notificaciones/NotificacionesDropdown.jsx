@@ -9,9 +9,11 @@ import {
   Inbox,
   X,
   RefreshCw,
+  Megaphone,
 } from 'lucide-react';
 import api from '../../services/api';
-import { getNotificacionStyle, formatearTiempoRelativo } from './notificacionHelpers.jsx';
+import { getNotificacionStyle, formatearTiempoRelativo, getUsuarioActual } from './notificacionHelpers.jsx';
+import CompositorNotificacion from './CompositorNotificacion';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
 // SSE desactivado por defecto: con `php artisan serve` (un solo hilo) una
@@ -23,13 +25,19 @@ const STREAM_URL = `${API_BASE_URL.replace(/\/$/, '')}/notificaciones/stream`;
 const POLL_OK_MS = 60000;
 const POLL_MAX_MS = 120000;
 
-export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
+export default function NotificacionesDropdown({ onVerTabla, onNavigate, user }) {
   const [isOpen, setIsOpen] = useState(false);
   const [notificaciones, setNotificaciones] = useState([]);
   const [totalNoLeidas, setTotalNoLeidas] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filtroTab, setFiltroTab] = useState('todas'); // 'todas' | 'no_leidas'
+  const [compositorAbierto, setCompositorAbierto] = useState(false);
   const dropdownRef = useRef(null);
+
+  const usuarioActual = user || getUsuarioActual();
+  const usuarioId = usuarioActual?.usuarioId || null;
+  const rolUsuario = String(usuarioActual?.rol || '').toUpperCase();
+  const puedeEnviarManual = ['ADMINISTRADOR', 'JEFE_TIENDA'].includes(rolUsuario);
 
   // Cargar notificaciones del backend (retorna true si tuvo éxito)
   const failCountRef = useRef(0);
@@ -40,6 +48,7 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
       const res = await api.notificaciones.listar({
         per_page: 10,
         solo_no_leidas: filtroTab === 'no_leidas' ? true : undefined,
+        usuario_id: usuarioId || undefined,
       });
 
       if (res && res.success) {
@@ -57,7 +66,7 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
     } finally {
       setLoading(false);
     }
-  }, [filtroTab]);
+  }, [filtroTab, usuarioId]);
   cargarRef.current = cargarNotificaciones;
 
   // Carga inicial para el badge de la campana
@@ -96,7 +105,11 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
     let eventSource = null;
     let errorCount = 0;
     try {
-      eventSource = new EventSource(STREAM_URL);
+      const streamUrl = usuarioId
+        ? `${STREAM_URL}?usuario_id=${encodeURIComponent(usuarioId)}`
+        : STREAM_URL;
+
+      eventSource = new EventSource(streamUrl);
 
       eventSource.addEventListener('notificacion', (event) => {
         try {
@@ -158,7 +171,7 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
   // Marcar todas como leídas
   const handleMarcarTodas = async () => {
     try {
-      await api.notificaciones.marcarTodas();
+      await api.notificaciones.marcarTodas(usuarioId);
       setNotificaciones((prev) => prev.map((n) => ({ ...n, NotificacionLeida: 'S' })));
       setTotalNoLeidas(0);
     } catch (err) {
@@ -255,6 +268,20 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
                 >
                   <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
                   <span>Marcar todas</span>
+                </button>
+              )}
+
+              {puedeEnviarManual && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    setCompositorAbierto(true);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition cursor-pointer"
+                  title="Enviar notificación manual (usuarios / roles / todos)"
+                >
+                  <Megaphone className="w-3.5 h-3.5" />
                 </button>
               )}
 
@@ -365,6 +392,18 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
                           {n.NotificacionCategoria || style.label}
                         </span>
 
+                        {n.NotificacionDatos?.prioridad && n.NotificacionDatos.prioridad !== 'NORMAL' && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full font-bold border ${
+                              n.NotificacionDatos.prioridad === 'URGENTE'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {n.NotificacionDatos.prioridad}
+                          </span>
+                        )}
+
                         {n.NotificacionReferenciaId && (
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono font-semibold">
                             {n.NotificacionReferenciaId}
@@ -377,6 +416,26 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
                           </span>
                         )}
                       </div>
+
+                      {/* Botón de Acción Rápida (Ej: Generar Orden de Compra) */}
+                      {n.NotificacionDatos?.accion?.url && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (typeof onNavigate === 'function') {
+                                onNavigate(n.NotificacionDatos.accion.url);
+                                setIsOpen(false);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-98 rounded-lg shadow-2xs transition cursor-pointer"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>{n.NotificacionDatos.accion.texto || 'Generar Orden de Compra'}</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Botón rápido marcar leída */}
@@ -415,6 +474,13 @@ export default function NotificacionesDropdown({ onVerTabla, onNavigate }) {
 
         </div>
       )}
+
+      <CompositorNotificacion
+        open={compositorAbierto}
+        onClose={() => setCompositorAbierto(false)}
+        user={usuarioActual}
+        onSent={cargarNotificaciones}
+      />
     </div>
   );
 }

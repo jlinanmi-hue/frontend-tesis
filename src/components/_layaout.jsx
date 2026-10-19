@@ -69,6 +69,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
   // Estado para transferir datos precargados de Valencia AI a componentes hijos
   const [aiOrderPrefill, setAiOrderPrefill] = useState(null);
   const [aiPurchaseOrderPrefill, setAiPurchaseOrderPrefill] = useState(null);
+  const [purchaseOrderInitialTab, setPurchaseOrderInitialTab] = useState('nueva');
+  const [purchaseOrderSearchTerm, setPurchaseOrderSearchTerm] = useState('');
 
   // Navegar a Clientes o Proveedores al recibir evento de Valencia AI (para registro)
   useEffect(() => {
@@ -140,24 +142,94 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
 
   const handleNavigateModule = (url) => {
     if (!url) return;
+
+    // 1. Dashboard / Indicadores
     if (url === '/dashboard' || url === '/indicadores') {
       setActiveMenu('indicadores');
       setActiveSubMenu('indicadores_general');
-    } else if (url === '/ordenes-compra') {
+      return;
+    }
+
+    // 2. Órdenes de Compra (Crear con precarga sugerida por IA)
+    if (url.startsWith('/ordenes-compra/crear') || (url.startsWith('/ordenes-compra') && url.includes('?producto='))) {
+      setPurchaseOrderInitialTab('nueva');
+      setPurchaseOrderSearchTerm('');
+
+      const queryPart = url.includes('?') ? url.split('?')[1] : '';
+      if (queryPart) {
+        const params = new URLSearchParams(queryPart);
+        const producto = params.get('producto');
+        const cantidad = params.get('cantidad');
+
+        if (producto) {
+          api.ordenesCompra.precarga(producto, cantidad)
+            .then((res) => {
+              const prefillData = res?.data?.data || res?.data || res;
+              if (prefillData && (prefillData.proveedor || prefillData.productos)) {
+                setAiPurchaseOrderPrefill(prefillData);
+              }
+            })
+            .catch((err) => {
+              console.error('Error al precargar orden de compra:', err);
+            });
+        }
+      }
       setActiveMenu('ordenes');
       setActiveSubMenu('ordenes_compra');
       setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
-    } else if (url === '/ordenes-clientes' || url === '/pedidos') {
+      return;
+    }
+
+    // 3. Órdenes de Compra (Historial / Búsqueda de Orden específica)
+    if (url.startsWith('/ordenes-compra') || url.startsWith('/compras')) {
+      setPurchaseOrderInitialTab('historial');
+      const ocMatch = url.match(/(?:ordenes-compra|compras)\/([A-Za-z0-9_-]+)/i);
+      const searchCode = ocMatch ? ocMatch[1] : '';
+      setPurchaseOrderSearchTerm(searchCode);
+
+      setActiveMenu('ordenes');
+      setActiveSubMenu('ordenes_compra');
+      setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
+      return;
+    }
+
+    // 4. Órdenes de Clientes / Pedidos
+    if (url === '/ordenes-clientes' || url === '/pedidos') {
       setActiveMenu('ordenes');
       setActiveSubMenu('ordenes_clientes');
       setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
-    } else if (url.includes('/inventario') || url.includes('/productos')) {
+      return;
+    }
+
+    // 5. Inventario - Kárdex y Movimientos
+    if (url.includes('/inventario/movimientos') || url.includes('/kardex')) {
+      setActiveMenu('inventario');
+      setActiveSubMenu('inventario_movimientos');
+      setOpenDropdowns((prev) => ({ ...prev, inventario: true }));
+      return;
+    }
+
+    // 6. Inventario - Mermas y Ajustes
+    if (url.includes('/inventario/ajustes') || url.includes('/mermas')) {
+      setActiveMenu('inventario');
+      setActiveSubMenu('inventario_ajustes');
+      setOpenDropdowns((prev) => ({ ...prev, inventario: true }));
+      return;
+    }
+
+    // 7. Inventario - Stock y Productos
+    if (url.includes('/inventario/stock') || url.includes('/inventario') || url.includes('/productos')) {
       setActiveMenu('inventario');
       setActiveSubMenu('inventario_stock');
       setOpenDropdowns((prev) => ({ ...prev, inventario: true }));
-    } else if (url.includes('/notificaciones')) {
+      return;
+    }
+
+    // 8. Notificaciones
+    if (url.includes('/notificaciones')) {
       setActiveMenu('notificaciones');
       setActiveSubMenu('notificaciones_tabla');
+      return;
     }
   };
 
@@ -855,6 +927,7 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
 
           <div className="flex items-center gap-3">
             <NotificacionesDropdown
+              user={user}
               onVerTabla={() => {
                 setActiveMenu('notificaciones');
                 setActiveSubMenu('notificaciones_tabla');
@@ -903,6 +976,8 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
             <GestionOrdenesCompra 
               aiPrefill={aiPurchaseOrderPrefill}
               onClearAiPrefill={() => setAiPurchaseOrderPrefill(null)}
+              initialTab={purchaseOrderInitialTab}
+              initialSearch={purchaseOrderSearchTerm}
               onNavigateToPredicciones={() => {
                 setActiveSubMenu('ordenes_predicciones');
                 setOpenDropdowns(prev => ({ ...prev, ordenes: true }));

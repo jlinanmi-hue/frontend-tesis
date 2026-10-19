@@ -21,7 +21,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import api from '../../services/api';
-import { getNotificacionStyle, formatearTiempoRelativo } from './notificacionHelpers.jsx';
+import { getNotificacionStyle, formatearTiempoRelativo, getUsuarioActual } from './notificacionHelpers.jsx';
 import StyledSelect from '../dashboard/filters/StyledSelect';
 
 export default function GestionNotificaciones({ onNavigateModule }) {
@@ -41,6 +41,9 @@ export default function GestionNotificaciones({ onNavigateModule }) {
   // Modal de Detalle
   const [notificacionSeleccionada, setNotificacionSeleccionada] = useState(null);
 
+  // Usuario autenticado (gate del frontend) para segmentar la bandeja
+  const usuarioId = getUsuarioActual()?.usuarioId || undefined;
+
   // Cargar notificaciones desde el backend
   const cargarNotificaciones = useCallback(async () => {
     setLoading(true);
@@ -52,6 +55,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
         categoria: filtroCategoria || undefined,
         tipo: filtroTipo || undefined,
         solo_no_leidas: filtroEstado === 'no_leidas' ? true : undefined,
+        usuario_id: usuarioId,
       });
 
       if (res && res.success) {
@@ -67,7 +71,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
     } finally {
       setLoading(false);
     }
-  }, [paginaActual, searchTerm, filtroCategoria, filtroTipo, filtroEstado]);
+  }, [paginaActual, searchTerm, filtroCategoria, filtroTipo, filtroEstado, usuarioId]);
 
   useEffect(() => {
     cargarNotificaciones();
@@ -93,7 +97,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
   // Marcar todas como leídas
   const handleMarcarTodas = async () => {
     try {
-      await api.notificaciones.marcarTodas();
+      await api.notificaciones.marcarTodas(usuarioId);
       setNotificaciones((prev) => prev.map((n) => ({ ...n, NotificacionLeida: 'S' })));
       setTotalNoLeidas(0);
     } catch (err) {
@@ -350,6 +354,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
               { value: 'merma', label: 'Merma' },
               { value: 'danger', label: 'Crítico' },
               { value: 'info', label: 'Informativo' },
+              { value: 'manual', label: 'Comunicado manual' },
             ]}
             panelWidth={220}
             ariaLabel="Filtrar por tipo de notificación"

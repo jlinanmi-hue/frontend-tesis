@@ -93,6 +93,11 @@ export default function GestionDespachoPedidos() {
     if (!estado || estado === 'PENDIENTE' || estado === 'PENDIENTE_DESPACHO') {
       try {
         await api.despacho.iniciar(pedido.PedidoId);
+        setPedidos((prev) =>
+          prev.map((p) =>
+            p.PedidoId === pedido.PedidoId ? { ...p, PedidoEstadoDespacho: 'EN_PREPARACION' } : p
+          )
+        );
         sileo.info({
           title: 'Preparación Iniciada',
           description: `Pedido ${pedido.PedidoId} pasó a estado EN_PREPARACION.`
