@@ -69,6 +69,12 @@ export default function ModalDespachoPedido({
         const initEstados = {};
         const initObs = {};
 
+        const estadoCerrado = (
+          ['ENTREGADO_COMPLETO', 'ENTREGADO_CON_FALTANTE', 'RECHAZADO_ROTURA', 'RECHAZADO', 'DEVUELTO', 'NO_DESPACHADO', 'ENTREGADO_PARCIAL'].includes(ped?.PedidoEstadoDespacho) ||
+          ped?.PedidoEstado === 'C' ||
+          ped?.PedidoEstado === 'A'
+        );
+
         itms.forEach((it) => {
           const id = it.Detalle_Pedido_ProductosId;
           const solicitada = Number(it.cantidad_solicitada || 0);
@@ -77,14 +83,27 @@ export default function ModalDespachoPedido({
           initCant[id] = despPrevia;
           initObs[id] = it.observacion_item || '';
 
-          if (it.estado_item === 'NO_DISPONIBLE' || despPrevia === 0) {
-            initEstados[id] = 'RECHAZADO';
-          } else if (it.estado_item === 'VERIFICADO_OK' || despPrevia === solicitada) {
-            initEstados[id] = 'CONFIRMADO';
-          } else if (it.estado_item === 'CON_FALTANTE' || (despPrevia > 0 && despPrevia < solicitada)) {
-            initEstados[id] = 'FALTANTE';
+          if (estadoCerrado) {
+            if (it.estado_item === 'NO_DISPONIBLE' || despPrevia === 0) {
+              initEstados[id] = 'RECHAZADO';
+            } else if (it.estado_item === 'VERIFICADO_OK' || despPrevia === solicitada) {
+              initEstados[id] = 'CONFIRMADO';
+            } else if (it.estado_item === 'CON_FALTANTE' || (despPrevia > 0 && despPrevia < solicitada)) {
+              initEstados[id] = 'CONFIRMADO';
+            } else {
+              initEstados[id] = 'CONFIRMADO';
+            }
           } else {
-            initEstados[id] = 'PENDIENTE';
+            // Modo preparación / pendiente: verificación estricta producto por producto
+            if (it.estado_item === 'VERIFICADO_OK') {
+              initEstados[id] = 'CONFIRMADO';
+            } else if (it.estado_item === 'NO_DISPONIBLE') {
+              initEstados[id] = 'RECHAZADO';
+            } else if (it.estado_item === 'CON_FALTANTE') {
+              initEstados[id] = 'CONFIRMADO';
+            } else {
+              initEstados[id] = 'PENDIENTE';
+            }
           }
         });
 
@@ -111,6 +130,7 @@ export default function ModalDespachoPedido({
   const handleCambiarCantidad = (detalleId, valor, solicitada) => {
     if (valor === '') {
       setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: '' }));
+      setItemEstados((prev) => ({ ...prev, [detalleId]: 'PENDIENTE' }));
       return;
     }
 
@@ -130,58 +150,41 @@ export default function ModalDespachoPedido({
         description: `No puedes despachar ${num}. El pedido solicita un máximo de ${maxSolicitada} unidades.`
       });
       setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: maxSolicitada }));
-      setItemEstados((prev) => ({ ...prev, [detalleId]: 'CONFIRMADO' }));
+      setItemEstados((prev) => ({ ...prev, [detalleId]: 'PENDIENTE' }));
       return;
     }
 
     setCantidadesDespacho((prev) => ({ ...prev, [detalleId]: num }));
     setItemEstados((prev) => ({
       ...prev,
-      [detalleId]: num === maxSolicitada ? 'CONFIRMADO' : num > 0 ? 'FALTANTE' : 'RECHAZADO'
+      [detalleId]: num === 0 ? 'RECHAZADO' : 'PENDIENTE'
     }));
   };
 
-  // Acción 1: CONFIRMAR Ítem individual o Despacho Completo
+  // Acción 1: CONFIRMAR Ítem individual (Solo verifica ese producto, NO cierra el modal)
   const handleConfirmarItem = (it) => {
     const id = it.Detalle_Pedido_ProductosId;
     const solicitada = Number(it.cantidad_solicitada || 0);
     const valor = cantidadesDespacho[id] === '' ? solicitada : Number(cantidadesDespacho[id] || 0);
     const cantFinal = Math.min(solicitada, Math.max(0, valor));
 
-    const newCantidades = { ...cantidadesDespacho, [id]: cantFinal };
-    setCantidadesDespacho(newCantidades);
-
-    const nuevoEstado = cantFinal === solicitada ? 'CONFIRMADO' : cantFinal > 0 ? 'FALTANTE' : 'RECHAZADO';
-    const newEstados = { ...itemEstados, [id]: nuevoEstado };
-    setItemEstados(newEstados);
-
-    // Si el pedido tiene 1 solo ítem O todos los ítems ya están completos/verificados,
-    // procesar el despacho de inmediato para que la acción del usuario sea efectiva.
-    const todosListos = items.every((otherIt) => {
-      const oId = otherIt.Detalle_Pedido_ProductosId;
-      const st = oId === id ? nuevoEstado : (newEstados[oId] || itemEstados[oId]);
-      return st === 'CONFIRMADO' || st === 'FALTANTE';
-    });
-
-    if (items.length === 1 || todosListos) {
-      ejecutarCierreDespacho(newCantidades, newEstados);
-      return;
-    }
+    setCantidadesDespacho((prev) => ({ ...prev, [id]: cantFinal }));
+    setItemEstados((prev) => ({ ...prev, [id]: 'CONFIRMADO' }));
 
     sileo.success({
-      title: 'Ítem Verificado Conforme',
+      title: 'Producto Verificado Conforme',
       description: `${it.producto_nombre}: ${cantFinal} de ${solicitada} unidades verificadas.`
     });
   };
 
-  // Acción 2: RECHAZAR Ítem individual (Agotado / Sin stock)
+  // Acción 2: RECHAZAR Ítem individual (Agotado / Sin stock, NO cierra el modal)
   const handleRechazarItem = (it) => {
     const id = it.Detalle_Pedido_ProductosId;
     setCantidadesDespacho((prev) => ({ ...prev, [id]: 0 }));
     setItemEstados((prev) => ({ ...prev, [id]: 'RECHAZADO' }));
     sileo.warning({
-      title: 'Ítem Sin Stock / Rechazado',
-      description: `${it.producto_nombre} marcado como no disponible (0 unidades a entregar).`
+      title: 'Producto Sin Stock / Rechazado',
+      description: `${it.producto_nombre} marcado como sin stock (0 unidades a entregar).`
     });
   };
 
@@ -325,7 +328,28 @@ export default function ModalDespachoPedido({
     }
   };
 
-  const handleCerrarDespacho = () => ejecutarCierreDespacho();
+  // Conteo de ítems pendientes de verificación
+  const itemsPendientesCount = useMemo(() => {
+    return items.filter((it) => {
+      const st = itemEstados[it.Detalle_Pedido_ProductosId];
+      return !st || st === 'PENDIENTE';
+    }).length;
+  }, [items, itemEstados]);
+
+  const itemsVerificadosCount = useMemo(() => {
+    return items.length - itemsPendientesCount;
+  }, [items, itemsPendientesCount]);
+
+  const handleCerrarDespacho = () => {
+    if (itemsPendientesCount > 0) {
+      sileo.warning({
+        title: 'Verificación Incompleta',
+        description: `Quedan ${itemsPendientesCount} producto(s) pendientes de verificar. Por favor confirma o rechaza cada producto de la lista antes de despachar.`
+      });
+      return;
+    }
+    ejecutarCierreDespacho();
+  };
 
   // RECHAZO TOTAL POR DESISTIMIENTO (Cliente desiste porque faltó producto)
   const handleConfirmarRechazo = async (payload) => {
@@ -451,10 +475,12 @@ export default function ModalDespachoPedido({
                       const solicitada = Number(it.cantidad_solicitada || 0);
                       const despachada = cantidadesDespacho[id] === '' ? 0 : Number(cantidadesDespacho[id] || 0);
                       const faltante = Math.max(0, solicitada - despachada);
-                      const estadoItem = itemEstados[id] || (despachada === 0 ? 'RECHAZADO' : despachada === solicitada ? 'CONFIRMADO' : 'FALTANTE');
-                      const esRechazado = estadoItem === 'RECHAZADO' || despachada === 0;
-                      const esCompleto = estadoItem === 'CONFIRMADO' && faltante === 0 && despachada > 0;
-                      const esFaltante = estadoItem === 'FALTANTE' || (despachada > 0 && despachada < solicitada);
+                      const estadoItem = itemEstados[id] || 'PENDIENTE';
+                      const esPendiente = estadoItem === 'PENDIENTE';
+                      const esConfirmado = estadoItem === 'CONFIRMADO';
+                      const esRechazado = estadoItem === 'RECHAZADO' || (estadoItem !== 'PENDIENTE' && despachada === 0);
+                      const esFaltante = estadoItem === 'CONFIRMADO' && despachada > 0 && despachada < solicitada;
+                      const esCompleto = estadoItem === 'CONFIRMADO' && despachada === solicitada;
                       const esExceso = despachada > solicitada;
 
                       return (
@@ -465,6 +491,8 @@ export default function ModalDespachoPedido({
                               ? 'bg-rose-50/30 opacity-90'
                               : esCompleto
                               ? 'bg-emerald-50/20'
+                              : esFaltante
+                              ? 'bg-amber-50/20'
                               : 'hover:bg-blue-50/30'
                           }
                         >
@@ -522,7 +550,7 @@ export default function ModalDespachoPedido({
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                                Pendiente
+                                <Clock className="w-3 h-3 text-slate-400" /> Por Verificar
                               </span>
                             )}
                           </td>
@@ -550,35 +578,76 @@ export default function ModalDespachoPedido({
                                 />
                               </td>
 
-                              <td className="py-3 px-3 text-center min-w-[210px] whitespace-nowrap">
+                              <td className="py-3 px-3 text-center min-w-[220px] whitespace-nowrap">
                                 <div className="flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmarItem(it)}
-                                    disabled={isSubmitting}
-                                    title="Confirmar y despachar este ítem"
-                                    className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
-                                      items.length === 1
-                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
-                                        : esCompleto
-                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                                        : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-                                    } disabled:opacity-50`}
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>{items.length === 1 ? 'Confirmar Despacho' : esCompleto ? '✓ Verificado' : 'Confirmar'}</span>
-                                  </button>
+                                  {esConfirmado ? (
+                                    <>
+                                      <span
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border shadow-2xs ${
+                                          esFaltante
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                            : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                        }`}
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{esFaltante ? `✓ Con Faltante (${despachada}/${solicitada})` : '✓ Verificado'}</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRechazarItem(it)}
+                                        disabled={isSubmitting}
+                                        title="Cambiar a sin stock / Rechazar este producto"
+                                        className="shrink-0 px-2.5 py-1 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 font-medium transition cursor-pointer disabled:opacity-50"
+                                      >
+                                        Rechazar
+                                      </button>
+                                    </>
+                                  ) : esRechazado ? (
+                                    <>
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+                                        <X className="w-3.5 h-3.5 text-rose-600" />
+                                        <span>✕ Sin Stock</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmarItem(it)}
+                                        disabled={isSubmitting}
+                                        title="Restablecer y verificar producto con stock"
+                                        className="shrink-0 px-2.5 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg border border-transparent hover:border-blue-200 font-medium transition cursor-pointer disabled:opacity-50"
+                                      >
+                                        Verificar
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {/* Estado PENDIENTE: ambos botones activos disponibles */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmarItem(it)}
+                                        disabled={isSubmitting}
+                                        title="Verificar y confirmar este producto"
+                                        className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs text-white active:scale-95 disabled:opacity-50 ${
+                                          despachada < solicitada && despachada > 0
+                                            ? 'bg-amber-600 hover:bg-amber-700'
+                                            : 'bg-blue-600 hover:bg-blue-700'
+                                        }`}
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{despachada < solicitada && despachada > 0 ? `Confirmar (${despachada}/${solicitada})` : 'Confirmar'}</span>
+                                      </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRechazarItem(it)}
-                                    disabled={isSubmitting}
-                                    title="Marcar sin stock / Rechazar este ítem"
-                                    className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
-                                  >
-                                    <X className="w-3.5 h-3.5 text-rose-600" />
-                                    <span>Rechazar</span>
-                                  </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRechazarItem(it)}
+                                        disabled={isSubmitting}
+                                        title="Marcar sin stock / Rechazar este producto"
+                                        className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-rose-50 hover:bg-rose-100 active:scale-95 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                                      >
+                                        <X className="w-3.5 h-3.5 text-rose-600" />
+                                        <span>Rechazar</span>
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </>
@@ -631,20 +700,29 @@ export default function ModalDespachoPedido({
               </>
             ) : (
               <>
-                {/* Mensaje de alerta a la izquierda */}
+                {/* Mensaje de progreso a la izquierda */}
                 <div className="flex items-center gap-2 text-xs">
-                  {calculos.hayFaltantes ? (
+                  {itemsPendientesCount > 0 ? (
+                    <div className="flex items-center gap-2 text-blue-700 font-medium">
+                      <Clock className="w-4 h-4 text-blue-500 shrink-0" />
+                      <span>
+                        Verificación ítem por ítem: <strong className="font-bold text-slate-800">{itemsVerificadosCount} de {items.length}</strong> verificado(s).{' '}
+                        <span className="text-amber-700 font-semibold">(Falta{itemsPendientesCount > 1 ? 'n' : ''} {itemsPendientesCount} pendiente{itemsPendientesCount > 1 ? 's' : ''})</span>
+                      </span>
+                    </div>
+                  ) : calculos.hayFaltantes ? (
                     <div className="flex items-center gap-2 text-amber-700 font-medium">
                       <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
                       <span>
-                        Hay ítems con faltante o sin stock. Al cerrar se registrará como <strong>"Entregado con Faltante"</strong> (PODE = 1, PRS = 1).
+                        Todos los productos verificados ({items.length}/{items.length}). Hay faltantes o sin stock.{' '}
+                        <strong>Se registrará como "Entregado con Faltante"</strong>.
                       </span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-emerald-700 font-medium">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
                       <span>
-                        Todos los ítems verificados conformes al 100%. Despacho completo conforme.
+                        Todos los productos ({items.length}/{items.length}) verificados conformes al 100%. Despacho listo para salida.
                       </span>
                     </div>
                   )}
@@ -675,7 +753,13 @@ export default function ModalDespachoPedido({
                     type="button"
                     disabled={isSubmitting || isLoading}
                     onClick={handleCerrarDespacho}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs ${
+                      itemsPendientesCount > 0
+                        ? 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                        : calculos.hayFaltantes
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
                   >
                     {isSubmitting ? (
                       <>
@@ -686,7 +770,9 @@ export default function ModalDespachoPedido({
                       <>
                         <PackageCheck className="w-4 h-4" />
                         <span>
-                          {calculos.hayFaltantes
+                          {itemsPendientesCount > 0
+                            ? `Verificar Pendientes (${itemsPendientesCount})`
+                            : calculos.hayFaltantes
                             ? 'Confirmar Despacho con Faltante'
                             : 'Confirmar y Despachar Pedido'}
                         </span>
