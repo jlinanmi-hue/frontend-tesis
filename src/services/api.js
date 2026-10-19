@@ -3,7 +3,12 @@
  * Conexión nativa con fetch, manejo uniforme de errores y soporte CORS.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.PROD
+    ? 'https://backend-tesis-xu33.onrender.com/api'
+    : 'http://127.0.0.1:8000/api')
+).replace(/\/+$/, '');
 
 /**
  * Petición genérica con manejo de cabeceras JSON y respuestas estandarizadas.
@@ -69,7 +74,7 @@ async function request(endpoint, options = {}) {
     }
     if (!error.status) {
       // Error de red o servidor backend apagado
-      const networkError = new Error('No se pudo conectar con el servidor backend (127.0.0.1:8000). Asegúrate de que "php artisan serve" esté ejecutándose.');
+      const networkError = new Error(`No se pudo conectar con el servidor backend (${API_BASE_URL}). Asegúrate de que el servicio esté activo y no esté bloqueado por CORS.`);
       networkError.status = 0;
       throw networkError;
     }
