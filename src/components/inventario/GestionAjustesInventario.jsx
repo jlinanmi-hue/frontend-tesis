@@ -237,8 +237,13 @@ export default function GestionAjustesInventario() {
     cargarResumen();
   }, [currentPage, filtroTipo, fechaDesde, fechaHasta]);
 
-  // Debounce para búsqueda libre
+  // Debounce para búsqueda libre (evita disparo doble en montaje inicial)
+  const isFirstSearchRender = useRef(true);
   useEffect(() => {
+    if (isFirstSearchRender.current) {
+      isFirstSearchRender.current = false;
+      return;
+    }
     const timer = setTimeout(() => {
       setCurrentPage(1);
       cargarAjustes(1);

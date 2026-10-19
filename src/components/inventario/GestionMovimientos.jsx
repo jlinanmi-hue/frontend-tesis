@@ -242,8 +242,13 @@ export default function GestionMovimientos() {
     cargarMovimientos(currentPage);
   }, [currentPage, filtroTipo, filtroDias, filtroSubtipo]);
 
-  // Manejador de búsqueda con debounce
+  // Manejador de búsqueda con debounce (evita disparo doble en montaje inicial)
+  const isFirstSearchRender = useRef(true);
   useEffect(() => {
+    if (isFirstSearchRender.current) {
+      isFirstSearchRender.current = false;
+      return;
+    }
     const timer = setTimeout(() => {
       setCurrentPage(1);
       cargarMovimientos(1);
