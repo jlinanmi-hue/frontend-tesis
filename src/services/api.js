@@ -16,7 +16,7 @@ const API_BASE_URL = (
  * en ms (por defecto 25000) para no dejar peticiones colgadas en el dashboard.
  */
 async function request(endpoint, options = {}) {
-  const { timeout = 25000, signal: callerSignal, ...rest } = options;
+  const { timeout = 65000, signal: callerSignal, ...rest } = options;
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const headers = {
