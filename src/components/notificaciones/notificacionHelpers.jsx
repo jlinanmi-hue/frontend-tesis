@@ -10,6 +10,7 @@ import {
   ShoppingBag,
   Bell,
   Megaphone,
+  Zap,
 } from 'lucide-react';
 
 /**
@@ -19,6 +20,16 @@ export function getNotificacionStyle(tipo) {
   const t = String(tipo || 'info').toLowerCase();
 
   switch (t) {
+    case 'compra_rapida':
+    case 'compra_flash':
+      return {
+        badgeBg: 'bg-sky-50 text-sky-700 border-sky-200',
+        dotColor: 'bg-sky-500',
+        iconBg: 'bg-sky-50 border-sky-200 text-sky-600',
+        borderLeft: 'border-l-sky-500',
+        label: 'Compra Rápida',
+        icon: <Zap className="w-4 h-4" />,
+      };
     case 'success':
       return {
         badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',

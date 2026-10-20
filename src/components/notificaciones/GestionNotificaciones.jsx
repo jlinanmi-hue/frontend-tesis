@@ -169,7 +169,9 @@ export default function GestionNotificaciones({ onNavigateModule }) {
   const totalMermas = notificaciones.filter(
     (n) => n.NotificacionTipo === 'merma' || n.NotificacionTipo === 'warning'
   ).length;
-  const totalExitos = notificaciones.filter((n) => n.NotificacionTipo === 'success').length;
+  const totalExitos = notificaciones.filter(
+    (n) => n.NotificacionTipo === 'success' || n.NotificacionTipo === 'compra_rapida'
+  ).length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -337,6 +339,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
               { value: '', label: 'Todas las categorías' },
               { value: 'INVENTARIO', label: 'Inventario' },
               { value: 'COMPRAS', label: 'Compras / OC' },
+              { value: 'COMPRA_RAPIDA', label: 'Compras Rápidas' },
               { value: 'PEDIDOS', label: 'Pedidos de Clientes' },
             ]}
             panelWidth={220}
@@ -350,6 +353,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
             options={[
               { value: '', label: 'Todos los tipos' },
               { value: 'success', label: 'Éxito / Ingreso' },
+              { value: 'compra_rapida', label: 'Compra Rápida' },
               { value: 'warning', label: 'Advertencia' },
               { value: 'merma', label: 'Merma' },
               { value: 'danger', label: 'Crítico' },
@@ -455,7 +459,7 @@ export default function GestionNotificaciones({ onNavigateModule }) {
                       {/* Categoría y Referencia */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         <span className="font-bold text-slate-700 block">
-                          {n.NotificacionCategoria || 'GENERAL'}
+                          {n.NotificacionCategoria === 'COMPRA_RAPIDA' ? 'COMPRA RÁPIDA' : (n.NotificacionCategoria || 'GENERAL')}
                         </span>
                         {n.NotificacionReferenciaId && (
                           <span className="font-mono text-[10px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
