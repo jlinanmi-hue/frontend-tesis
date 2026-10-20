@@ -24,6 +24,13 @@ async function request(endpoint, options = {}) {
     ...(rest.headers || {}),
   };
 
+  try {
+    const sessionToken = localStorage.getItem('sessionToken');
+    const usuarioId = localStorage.getItem('usuarioId');
+    if (sessionToken) headers['X-Session-Token'] = sessionToken;
+    if (usuarioId) headers['X-User-Id'] = usuarioId;
+  } catch (e) {}
+
   if (!(rest.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
@@ -54,6 +61,11 @@ async function request(endpoint, options = {}) {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
+      if (response.status === 401 && (data?.code === 'SESSION_SUPERSEDED' || data?.code === 'SESSION_INVALID')) {
+        try {
+          window.dispatchEvent(new CustomEvent('valencia:session-superseded', { detail: data }));
+        } catch (e) {}
+      }
       const errorMsg = data?.message || `Error del servidor (${response.status})`;
       const error = new Error(errorMsg);
       error.status = response.status;
@@ -95,6 +107,11 @@ export const api = {
     logout: () =>
       request('/auth/logout', {
         method: 'POST',
+      }),
+    verifySession: (usuarioId, sessionToken) =>
+      request('/auth/verify-session', {
+        method: 'POST',
+        body: { usuario_id: usuarioId, session_token: sessionToken },
       }),
   },
 

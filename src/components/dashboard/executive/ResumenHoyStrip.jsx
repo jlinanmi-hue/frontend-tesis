@@ -40,7 +40,7 @@ export default function ResumenHoyStrip({ resumen }) {
     {
       id: 'tiempo',
       label: 'Tiempo Medio',
-      valor: `${data.tiempo_medio_seg ?? 40}s`,
+      valor: `${Number(data.tiempo_medio_seg ?? 40).toFixed(2)}s`,
       sub: 'Por cada pedido',
       icon: <Clock className="w-4 h-4 text-emerald-600" />,
       bgIcon: 'bg-emerald-50 border-emerald-200/80',
@@ -48,7 +48,7 @@ export default function ResumenHoyStrip({ resumen }) {
     {
       id: 'ia',
       label: 'Asistidos por IA',
-      valor: `${data.porcentaje_ia ?? 0}%`,
+      valor: `${Number(data.porcentaje_ia ?? 0).toFixed(2)}%`,
       sub: 'Vía Valencia AI',
       icon: <Sparkles className="w-4 h-4 text-indigo-600" />,
       bgIcon: 'bg-indigo-50 border-indigo-200/80',
@@ -64,7 +64,7 @@ export default function ResumenHoyStrip({ resumen }) {
     {
       id: 'sla',
       label: 'Despachos a Tiempo',
-      valor: `${data.sla_cumplimiento ?? 100}%`,
+      valor: `${Number(data.sla_cumplimiento ?? 100).toFixed(2)}%`,
       sub: 'Cumplimiento SLA',
       icon: <Truck className="w-4 h-4 text-teal-600" />,
       bgIcon: 'bg-teal-50 border-teal-200/80',

@@ -1,8 +1,9 @@
-import React, { Component, useState } from 'react';
+import React, { Component, useState, useEffect } from 'react';
 import Login from './components/Login';
 import Layout from './components/_layaout';
 import { Toaster, sileo } from 'sileo';
 import 'sileo/styles.css';
+import api from './services/api';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -63,18 +64,85 @@ function App() {
     setIsAuthenticated(true);
     localStorage.setItem('isAuth', 'true');
     localStorage.setItem('userData', JSON.stringify(userData));
+    if (userData?.sessionToken) {
+      localStorage.setItem('sessionToken', userData.sessionToken);
+    }
+    if (userData?.usuarioId) {
+      localStorage.setItem('usuarioId', userData.usuarioId);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = (customMsg = null) => {
     setCurrentUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('isAuth');
     localStorage.removeItem('userData');
-    sileo.info({
-      title: 'Sesión Finalizada',
-      description: 'Has salido del sistema de forma segura.',
-    });
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('usuarioId');
+
+    if (customMsg) {
+      sileo.error({
+        title: customMsg.title || 'Sesión Cerrada',
+        description: customMsg.description || 'Has salido del sistema.',
+      });
+    } else {
+      sileo.info({
+        title: 'Sesión Finalizada',
+        description: 'Has salido del sistema de forma segura.',
+      });
+    }
   };
+
+  // 1. Escuchar evento de sesión superada por inicio en otro dispositivo
+  useEffect(() => {
+    const handleSessionSuperseded = (e) => {
+      const detail = e.detail || {};
+      const dev = detail.ultimo_dispositivo || 'otro dispositivo';
+      handleLogout({
+        title: 'Sesión Cerrada en este Dispositivo',
+        description: `Tu cuenta ha sido abierta desde ${dev}. Por seguridad, solo se permite una sesión activa a la vez.`,
+      });
+    };
+
+    window.addEventListener('valencia:session-superseded', handleSessionSuperseded);
+    return () => window.removeEventListener('valencia:session-superseded', handleSessionSuperseded);
+  }, []);
+
+  // 2. Heartbeat de verificación de sesión única activa (cada 15 segundos)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkSession = async () => {
+      try {
+        const uId = localStorage.getItem('usuarioId') || currentUser?.usuarioId;
+        const sTok = localStorage.getItem('sessionToken') || currentUser?.sessionToken;
+        if (!uId || !sTok) return;
+
+        const res = await api.auth.verifySession(uId, sTok);
+        if (res && res.active === false) {
+          handleLogout({
+            title: 'Sesión Transferida',
+            description: res.message || 'Se ha iniciado sesión en otro dispositivo.',
+          });
+        }
+      } catch (err) {
+        if (err?.status === 401 && (err?.data?.code === 'SESSION_SUPERSEDED' || err?.data?.code === 'SESSION_INVALID')) {
+          handleLogout({
+            title: 'Sesión Cerrada en este Dispositivo',
+            description: err.data?.message || 'Tu cuenta se abrió en otro dispositivo.',
+          });
+        }
+      }
+    };
+
+    // Verificar a los 3 segundos del montado y luego periódicamente cada 15s
+    const initialTimer = setTimeout(checkSession, 3000);
+    const interval = setInterval(checkSession, 15000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, currentUser]);
 
   return (
     <ErrorBoundary>

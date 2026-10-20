@@ -40,7 +40,7 @@ export default function Login({ onLoginSuccess }) {
               throw new Error(response?.message || 'Credenciales no válidas');
             }
 
-            const { usuario: userObj, empleado } = response.data || {};
+            const { usuario: userObj, empleado, session_token, dispositivo } = response.data || {};
             sessionData = {
               usuario: userObj?.UsuarioUserName || usuario,
               nombreCompleto: empleado ? `${empleado.EmpleadoNombres} ${empleado.EmpleadoApellidos}` : usuario,
@@ -49,6 +49,8 @@ export default function Login({ onLoginSuccess }) {
               empleadoId: empleado?.EmpleadoId,
               usuarioId: userObj?.UsuarioId,
               rol: userObj?.rol_codigo ?? userObj?.rol ?? null,
+              sessionToken: session_token || null,
+              dispositivo: dispositivo || null,
               timestamp: new Date().toISOString(),
             };
 
