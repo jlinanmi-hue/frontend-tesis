@@ -236,9 +236,9 @@ export default function GestionDespachoPedidos() {
             onChange={(v) => setFiltroEstado(v)}
             options={[
               { value: '', label: 'Todos los Estados' },
-              { value: 'PENDIENTE', label: 'Por Despachar (Pendientes)' },
-              { value: 'EN_PREPARACION', label: 'En Preparación (Picking)' },
-              { value: 'ENTREGADO_COMPLETO', label: 'Entregado 100% Conforme' },
+              { value: 'PENDIENTE', label: 'Por Despachar' },
+              { value: 'EN_PREPARACION', label: 'En Preparación' },
+              { value: 'ENTREGADO_COMPLETO', label: 'Entregado Conforme' },
               { value: 'ENTREGADO_CON_FALTANTE', label: 'Entregado con Faltante' },
               { value: 'RECHAZADO_ROTURA', label: 'Rechazado por Rotura' },
             ]}

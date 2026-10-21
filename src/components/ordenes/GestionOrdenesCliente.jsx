@@ -4977,8 +4977,8 @@ export default function GestionOrdenesCliente({
                 value={causaFalloCancelacion}
                 onChange={(v) => setCausaFalloCancelacion(v)}
                 options={[
-                  { value: 'RECHAZO_CLIENTE', label: 'Rechazo por Cliente (Desistió / Canceló)' },
-                  { value: 'FALTA_STOCK', label: 'Falta de Stock Físico (Quiebre)' },
+                  { value: 'RECHAZO_CLIENTE', label: 'Rechazo por Cliente' },
+                  { value: 'FALTA_STOCK', label: 'Falta de Stock Físico' },
                   { value: 'ERROR_DIRECCION', label: 'Error en Dirección / Zona No Cubierta' },
                   { value: 'ERROR_FACTURACION', label: 'Error de Facturación / Precios' },
                   { value: 'PROBLEMA_LOGISTICO', label: 'Problema Logístico / Reparto' },
