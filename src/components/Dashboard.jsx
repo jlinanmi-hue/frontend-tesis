@@ -196,13 +196,21 @@ export default function Dashboard() {
         top_causas: topCausas,
       });
 
-      if (res && res.data) {
-        setAiInsight(res.data);
+      const payload = res?.data || res;
+      if (payload && (payload.analisis || payload.success === true)) {
+        setAiInsight({
+          ...payload,
+          success: true,
+          en_mantenimiento: false,
+        });
       } else {
         setAiInsight({
           success: false,
           en_mantenimiento: true,
-          mensaje_amigable: res?.message || 'Servicio de interpretación temporalmente en mantenimiento.',
+          mensaje_amigable:
+            payload?.mensaje_amigable ||
+            res?.message ||
+            'El servicio de interpretación predictiva con IA se encuentra temporalmente en pausa técnica.',
         });
       }
     } catch (err) {
