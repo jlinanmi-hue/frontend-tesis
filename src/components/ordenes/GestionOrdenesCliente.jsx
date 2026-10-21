@@ -53,6 +53,7 @@ import { sileo } from 'sileo';
 import api from '../../services/api';
 import DocumentoOrdenOficial from '../common/DocumentoOrdenOficial';
 import ModalCompraRapida from './ModalCompraRapida';
+import ModalEscanearLista from './ModalEscanearLista';
 import StyledSelect from '../dashboard/filters/StyledSelect';
 import StyledDatePicker from '../common/StyledDatePicker';
 
@@ -670,6 +671,63 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     motivo: ''
   });
 
+  // Modal de Escaneo con IA (Valencia Vision)
+  const [showModalEscanearLista, setShowModalEscanearLista] = useState(false);
+  const [tokenAuditoriaVision, setTokenAuditoriaVision] = useState(null);
+
+  const handleItemsAceptadosVision = (itemsDetectados, tokenAuditoria) => {
+    if (!itemsDetectados || itemsDetectados.length === 0) return;
+
+    const nuevosItems = itemsDetectados
+      .filter((item) => item.producto_id)
+      .map((item) => {
+        const cantidad = parseFloat(item.cantidad_detectada) || 1;
+        const factorConversion = parseFloat(item.presentacion_factor) || 1;
+        const precio = parseFloat(item.precio_unitario) || 0;
+        const stockTotal = parseFloat(item.stock_actual) || 0;
+        return {
+          producto_id: item.producto_id,
+          producto_nombre: item.producto_nombre,
+          producto_marca: item.producto_marca || 'Genérico',
+          categoria_nombre: '',
+          unidad_id: item.presentacion_id || 'UND-00001',
+          unidad_abreviatura: item.presentacion_nombre || 'UND',
+          unidad_descripcion: item.presentacion_nombre || 'Unidad',
+          factor_conversion: factorConversion,
+          stock_fisico: stockTotal,
+          stock_total: stockTotal,
+          cantidad_fisica_estimada: parseFloat((cantidad * factorConversion).toFixed(2)),
+          precio_unitario: precio,
+          cantidad: cantidad,
+          subtotal: parseFloat((cantidad * precio).toFixed(2)),
+          sugerido_ia: true,
+          match_badge: item.match_badge,
+        };
+      });
+
+    if (nuevosItems.length === 0) {
+      sileo.warning('Ningún producto escaneado pudo ser emparejado con el catálogo.');
+      return;
+    }
+
+    setProductosPedido((prev) => {
+      const combinados = [...prev];
+      for (const nuevo of nuevosItems) {
+        const idx = combinados.findIndex((p) => p.producto_id === nuevo.producto_id);
+        if (idx >= 0) {
+          combinados[idx] = nuevo;
+        } else {
+          combinados.push(nuevo);
+        }
+      }
+      return combinados;
+    });
+
+    setTokenAuditoriaVision(tokenAuditoria);
+    setEsOrigenIa(true);
+    sileo.success(`Se agregaron ${nuevosItems.length} productos detectados por IA.`);
+  };
+
   const handleAbrirCompraRapida = (producto, faltante = 1) => {
     setCompraRapidaParams({
       producto: producto,
@@ -945,6 +1003,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       setShowModalEditarItem(false);
       setItemEnEdicion(null);
       setEsOrigenIa(false);
+      setTokenAuditoriaVision(null);
 
       // Limpiar sessionStorage y referencia de props
       try {
@@ -2087,6 +2146,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         canal_id: canalSeleccionado || 'CNL-00001',
         acuerdo_comercial: acuerdoComercial.trim() || 'Pedido',
         origen_ia: esOrigenIa ? 'S' : 'N',
+        token_auditoria: tokenAuditoriaVision || null,
         fecha_entrega: fechaEntrega || null,
         es_delivery: esDelivery ? 'S' : 'N',
         zona_delivery_id: zonaIdFinal,
@@ -2180,6 +2240,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
         cargarCatalogos();
 
         setProductosPedido([]);
+        setTokenAuditoriaVision(null);
         setClienteSeleccionado(null);
         setSearchCliente('');
         setAcuerdoComercial('Pedido');
@@ -3487,19 +3548,31 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                     4. Detalle de Productos Solicitados ({productosPedido.length})
                   </h2>
                 </div>
-                {productosPedido.length > 0 && (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm('¿Desea vaciar todos los productos del pedido?')) {
-                        setProductosPedido([]);
-                      }
-                    }}
-                    className="text-xs text-rose-600 hover:underline font-semibold"
+                    onClick={() => setShowModalEscanearLista(true)}
+                    className="px-3 py-1.5 bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    title="Escanear foto de lista de compras manuscrita o impresa con IA"
                   >
-                    Vaciar Lista
+                    <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+                    <span>Escanear con IA</span>
                   </button>
-                )}
+                  {productosPedido.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('¿Desea vaciar todos los productos del pedido?')) {
+                          setProductosPedido([]);
+                          setTokenAuditoriaVision(null);
+                        }
+                      }}
+                      className="text-xs text-rose-600 hover:underline font-semibold"
+                    >
+                      Vaciar Lista
+                    </button>
+                  )}
+                </div>
               </div>
 
               {productosPedido.length === 0 ? (
@@ -3509,8 +3582,16 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                   </div>
                   <p className="text-xs font-bold text-slate-700">No hay productos en el pedido</p>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                    Busque productos en el catálogo superior y agréguelos para generar la orden.
+                    Busque productos en el catálogo superior o use el escáner de fotos con IA para precargar una lista manuscrita.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowModalEscanearLista(true)}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg border border-blue-200 transition cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Escanear lista manuscrita con IA</span>
+                  </button>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -3534,6 +3615,12 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                             <p className="font-bold text-slate-800">{item.producto_nombre}</p>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
                               <span>{item.producto_marca} • {item.producto_id}</span>
+                              {item.sugerido_ia && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  Sugerido IA
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="py-3 px-3">
@@ -5522,6 +5609,17 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
           cantidadInicial={compraRapidaParams.cantidad}
           motivoInicial={compraRapidaParams.motivo}
           onCompraExitosa={handleCompraRapidaExitosa}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL ESCANEAR LISTA DE PEDIDO CON IA (VALENCIA VISION)                  */}
+      {/* ========================================================================= */}
+      {showModalEscanearLista && (
+        <ModalEscanearLista
+          isOpen={showModalEscanearLista}
+          onClose={() => setShowModalEscanearLista(false)}
+          onItemsAceptados={handleItemsAceptadosVision}
         />
       )}
     </div>

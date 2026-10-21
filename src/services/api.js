@@ -1049,6 +1049,21 @@ export const api = {
     },
   },
 
+  // 15.1 MÓDULO DE VISIÓN MULTIMODAL CON IA (VALENCIA VISION)
+  vision: {
+    procesarPedido: (data) =>
+      request('/vision/procesar-pedido', {
+        method: 'POST',
+        body: data,
+        timeout: 50000,
+      }),
+    auditarResultado: (datos) =>
+      request('/vision/auditar-resultado', {
+        method: 'POST',
+        body: datos,
+      }),
+  },
+
   // 16. MÓDULO DE DASHBOARD Y MÉTRICAS DE TESIS
   dashboard: {
     ejecutivo: (params = {}, options = {}) => {
