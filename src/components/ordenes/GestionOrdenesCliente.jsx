@@ -3805,58 +3805,24 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
       {/* PESTAÑA 2: HISTORIAL & SEGUIMIENTO DE PEDIDOS */}
       {/* ---------------------------------------------------- */}
       {activeTab === 'historial' && (
-        <div className="space-y-6">
-          {/* KPI Cards Banner */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Órdenes</span>
-              <p className="text-2xl font-bold text-slate-800 mt-1">
-                {statsData?.total_ordenes || 0}
-              </p>
-              <span className="text-[11px] text-slate-400">
-                {filtroEstado === 'P'
-                  ? 'Filtro: Pendientes (P)'
-                  : filtroEstado === 'C'
-                  ? 'Filtro: Completadas (C)'
-                  : filtroEstado === 'A'
-                  ? 'Filtro: Canceladas (A)'
-                  : 'Registros bajo filtros'}
-              </span>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Órdenes Facturadas</span>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">
-                S/ {parseFloat(statsData?.total_ventas_completadas || 0).toFixed(2)}
-              </p>
-              <span className="text-[11px] text-slate-400">
-                {statsData?.conteo_estados?.completadas || 0} órdenes cobradas
-              </span>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Pendientes de Despacho</span>
-              <p className="text-2xl font-bold text-amber-600 mt-1">
-                S/ {parseFloat(statsData?.total_monto_pendiente || 0).toFixed(2)}
-              </p>
-              <span className="text-[11px] text-slate-400">
-                {statsData?.conteo_estados?.pendientes || 0} en cola
-              </span>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-              <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">Órdenes de Hoy</span>
-              <p className="text-2xl font-bold text-blue-600 mt-1">
-                S/ {parseFloat(statsData?.hoy?.total_ventas || 0).toFixed(2)}
-              </p>
-              <span className="text-[11px] text-slate-400">
-                {statsData?.hoy?.total_ordenes || 0} órdenes hoy
-              </span>
-            </div>
-          </div>
-
-          {/* Barra de Filtros */}
+        <div className="space-y-4">
+          {/* Barra de Filtros y Búsqueda Directa */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">Filtros y Búsqueda</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                  Mostrando {paginacion.total || historial.length || 0} órdenes
+                </span>
+              </div>
+              {statsData?.conteo_estados?.pendientes > 0 && (
+                <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  {statsData.conteo_estados.pendientes} pendientes de atención
+                </span>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* Buscador */}
               <div className="lg:col-span-2 relative">

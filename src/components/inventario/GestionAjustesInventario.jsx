@@ -466,11 +466,16 @@ export default function GestionAjustesInventario() {
               <ClipboardList className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">
-                Ajustes de Inventario y Mermas
-              </h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-bold text-slate-800 tracking-tight">
+                  Ajustes de Inventario y Mermas
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+                  Mostrando {paginacion.total || resumen.total_ajustes || ajustes.length || 0} registros
+                </span>
+              </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Registro de bajas, control de mermas físicas, caducidades y análisis de impacto económico.
+                Historial de movimientos físicos, control de mermas y auditoría de inventario
               </p>
             </div>
           </div>
@@ -515,72 +520,7 @@ export default function GestionAjustesInventario() {
       </div>
 
       {/* ============================================================ */}
-      {/* 2. TARJETAS KPI DE IMPACTO FINANCIERO                        */}
-      {/* ============================================================ */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Ajustes */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Total Ajustes</p>
-            <p className="text-2xl font-bold text-slate-800 mt-1">
-              {isLoadingResumen ? '...' : (resumen.total_ajustes || 0)}
-            </p>
-            <span className="text-[11px] text-slate-400">Incidencias registradas</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-            <ClipboardList className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Unidades Bajas */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Unidades Ajustadas</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">
-              {isLoadingResumen ? '...' : Number(resumen.total_unidades || 0).toLocaleString()}
-            </p>
-            <span className="text-[11px] text-slate-400">Descontadas del stock</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
-            <Package className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Costo Perdido */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Costo Total Perdido</p>
-            <p className="text-2xl font-bold text-rose-600 mt-1">
-              {isLoadingResumen
-                ? '...'
-                : `S/ ${Number(resumen.costo_total_perdido || 0).toFixed(2)}`}
-            </p>
-            <span className="text-[11px] text-slate-400">Valorizado al costo compra</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
-            <TrendingDown className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Venta Perdida */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Pérdida Venta Potencial</p>
-            <p className="text-2xl font-bold text-purple-600 mt-1">
-              {isLoadingResumen
-                ? '...'
-                : `S/ ${Number(resumen.venta_total_perdida || 0).toFixed(2)}`}
-            </p>
-            <span className="text-[11px] text-slate-400">Valorizado a precio venta</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100">
-            <DollarSign className="w-6 h-6" />
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 3. FILTROS Y CONTROLES DE BÚSQUEDA                          */}
+      {/* 2. FILTROS Y CONTROLES DE BÚSQUEDA                          */}
       {/* ============================================================ */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
