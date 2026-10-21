@@ -4104,10 +4104,17 @@ export default function GestionOrdenesCliente({
                               </span>
                             )}
                             {isCompletada && (
-                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3" />
-                                Completada
-                              </span>
+                              orden.estado_despacho === 'ENTREGADO_CON_FALTANTE' || orden.tiene_faltante ? (
+                                <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold inline-flex items-center gap-1" title="Entregada con faltante">
+                                  <AlertCircle className="w-3 h-3 text-amber-600" />
+                                  Con Faltante
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Completada
+                                </span>
+                              )
                             )}
                             {isCancelada && (
                               <span className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
@@ -4582,13 +4589,15 @@ export default function GestionOrdenesCliente({
                   <div className={`p-4 rounded-xl border flex items-center justify-between ${
                     ordenDetalle.estado === 'P'
                       ? 'bg-amber-50/60 border-amber-200 text-amber-900'
+                      : (ordenDetalle.estado_despacho === 'ENTREGADO_CON_FALTANTE' || ordenDetalle.tiene_faltante)
+                      ? 'bg-amber-50 border-amber-300 text-amber-900'
                       : ordenDetalle.estado === 'C'
                       ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
                       : 'bg-rose-50/60 border-rose-200 text-rose-900'
                   }`}>
                     <div className="flex items-center gap-2.5">
                       {ordenDetalle.estado === 'P' && <Clock className="w-5 h-5 text-amber-600" />}
-                      {ordenDetalle.estado === 'C' && <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                      {ordenDetalle.estado === 'C' && ((ordenDetalle.estado_despacho === 'ENTREGADO_CON_FALTANTE' || ordenDetalle.tiene_faltante) ? <AlertCircle className="w-5 h-5 text-amber-600" /> : <CheckCircle2 className="w-5 h-5 text-emerald-600" />)}
                       {ordenDetalle.estado === 'A' && <XCircle className="w-5 h-5 text-rose-600" />}
                       <div>
                         <p className="font-bold text-sm">Estado: {ordenDetalle.estado_texto}</p>
@@ -4812,6 +4821,11 @@ export default function GestionOrdenesCliente({
                                   {d.factor_conversion > 1 && (
                                     <span className="block text-[10px] text-blue-600 font-semibold">
                                       (= {d.cantidad_base || (d.cantidad * d.factor_conversion)} UND)
+                                    </span>
+                                  )}
+                                  {(d.tuvo_rotura || parseFloat(d.cantidad_faltante || 0) > 0) && (
+                                    <span className="inline-block text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-1">
+                                      Faltó: {d.cantidad_faltante} {d.unidad_abreviatura || 'UND'}
                                     </span>
                                   )}
                                 </td>
