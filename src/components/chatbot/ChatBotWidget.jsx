@@ -30,8 +30,11 @@ import {
   Check,
   User,
   Cpu,
+  Camera,
+  UploadCloud,
 } from 'lucide-react';
 import api from '../../services/api';
+import { optimizeImageForTile } from '../../utils/imageTileOptimizer';
 // recharts (~300KB) solo se descarga cuando la IA devuelve un gráfico,
 // no en la carga inicial del chatbot
 const ChatChart = lazy(() => import('./ChatChart'));
@@ -257,6 +260,12 @@ export default function ChatBotWidget() {
   });
   const [voiceAlertBanner, setVoiceAlertBanner] = useState(null);
   const [isCheckingVoice, setIsCheckingVoice] = useState(false);
+
+  // Estados para Valencia Vision (Escaneo de fotos e imágenes)
+  const [showCameraMenu, setShowCameraMenu] = useState(false);
+  const cameraMenuRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // ESTADOS DE VENTANA FLOTANTE Y ARRASTRE
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -905,6 +914,145 @@ export default function ChatBotWidget() {
     try {
       localStorage.setItem('valencia_ai_voice_mode', next);
     } catch (e) {}
+  };
+
+  // CERRAR MENÚ DE CÁMARA AL HACER CLIC FUERA
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (cameraMenuRef.current && !cameraMenuRef.current.contains(e.target)) {
+        setShowCameraMenu(false);
+      }
+    };
+    if (showCameraMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCameraMenu]);
+
+  // PROCESAMIENTO DE IMAGEN CON VALENCIA VISION (Gemini 1.5 Flash 1-Tile)
+  const handleImageFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    try {
+      setIsLoading(true);
+      setStreamingStatus('Optimizando imagen para 1-Tile...');
+
+      // 1. Redimensionar a máx 768px (WebP con fallback a JPEG)
+      const optimized = await optimizeImageForTile(file);
+
+      // 2. Insertar mensaje del usuario en el chat con thumbnail
+      const userMsg = {
+        id: Date.now().toString(),
+        sender: 'user',
+        text: '📷 Lista de pedido escaneada',
+        image: optimized.dataUrl,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+
+      setStreamingStatus('Interpretando lista con Valencia Vision...');
+
+      // 3. Procesar en backend con Gemini 1.5 Flash Vision
+      const res = await api.vision.procesarPedido({
+        imagen_base64: optimized.base64Data,
+        mime_type: optimized.mimeType,
+      });
+
+      if (res && res.success && res.data) {
+        const items = res.data.items || [];
+        const totalProds = items.length;
+        const tokenAuditoria = res.data.token_auditoria;
+
+        if (totalProds === 0) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: (Date.now() + 1).toString(),
+              sender: 'bot',
+              text: 'No logré identificar productos claros en la imagen. Intenta con una foto más nítida o escribe tu consulta en el chat.',
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ]);
+          return;
+        }
+
+        let replyText = `📸 **He analizado la lista con Valencia Vision (Gemini 1.5 Flash):**\n\nIdentifiqué **${totalProds} producto(s)** en el catálogo:\n`;
+        items.forEach((it) => {
+          const nombre = it.producto_nombre || it.nombre_buscado;
+          const cant = it.cantidad_detectada || 1;
+          const pres = it.presentacion_nombre || 'Unidad';
+          const precio = it.precio_unitario ? ` · S/ ${Number(it.precio_unitario).toFixed(2)}` : '';
+          const badgeIcon = it.match_badge === 'verde' ? '✅' : '⚡';
+          replyText += `\n${badgeIcon} **${cant}x ${nombre}** (${pres}${precio})`;
+        });
+        replyText += `\n\n¿Deseas que prepare el borrador de la orden de pedido con estos productos?`;
+
+        const prefillData = {
+          productos: items
+            .filter((i) => i.producto_id)
+            .map((i) => ({
+              producto_id: i.producto_id,
+              producto_nombre: i.producto_nombre,
+              cantidad: i.cantidad_detectada || 1,
+              unidad_id: i.presentacion_id,
+              unidad_abreviatura: i.presentacion_nombre || 'UND',
+              unidad_descripcion: i.presentacion_nombre || 'Unidad',
+              precio_unitario: i.precio_unitario || 0,
+              factor_conversion: i.presentacion_factor || 1,
+              stock_fisico: i.stock_actual || 0,
+              stock_total: i.stock_actual || 0,
+            })),
+          token_auditoria: tokenAuditoria,
+        };
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            sender: 'bot',
+            text: replyText,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            chips: [
+              {
+                label: '🛒 Preparar orden de pedido',
+                action: 'open_order_form',
+                prefill: prefillData,
+              },
+              {
+                label: '📦 Consultar stock de estos productos',
+                query: `¿Hay stock disponible de ${items.slice(0, 3).map((i) => i.producto_nombre).join(', ')}?`,
+              },
+              {
+                label: '❌ Descartar',
+                query: 'Descartar esta lista',
+              },
+            ],
+            ui_action: {
+              type: 'open_order_form',
+              prefill: prefillData,
+            },
+          },
+        ]);
+      } else {
+        throw new Error(res?.message || 'Error al procesar la imagen.');
+      }
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: 'bot',
+          isError: true,
+          text: `Ocurrió un error al procesar la imagen: ${err.message || 'Error de conexión'}.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+      setStreamingStatus(null);
+    }
   };
 
   // CLIC EN EL MICRÓFONO CON VALIDACIÓN DE SATURACIÓN
@@ -1587,6 +1735,11 @@ export default function ChatBotWidget() {
                 )}
 
                 <div className={`max-w-[87%] space-y-1.5 ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                  {msg.image && (
+                    <div className="rounded-xl overflow-hidden border border-slate-200/80 shadow-2xs max-w-[220px] mb-1">
+                      <img src={msg.image} alt="Lista escaneada" className="w-full h-auto object-cover max-h-48" />
+                    </div>
+                  )}
                   {msg.voiceNote && (
                     <VoiceNotePlayer voiceNote={msg.voiceNote} />
                   )}
@@ -1641,6 +1794,15 @@ export default function ChatBotWidget() {
                                   );
                                 }
                               } catch (e) {}
+                            }
+
+                            if (chip.action === 'open_order_form') {
+                              const prefill = chip.prefill || chip.params || {};
+                              try {
+                                sessionStorage.setItem('valencia_ai_order_prefill', JSON.stringify(prefill));
+                              } catch (e) {}
+                              window.dispatchEvent(new CustomEvent('valencia-ai:open-order-form', { detail: { type: 'open_order_form', prefill } }));
+                              return;
                             }
 
                             if (chip.action === 'open_supplier_form') {
@@ -1817,6 +1979,23 @@ export default function ChatBotWidget() {
                 className="flex items-center gap-2"
               >
                 <div className="relative flex-1 flex items-center bg-slate-50 focus-within:bg-white border border-slate-200/90 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 rounded-2xl transition duration-200 px-3 py-1 shadow-2xs">
+                  {/* Inputs ocultos para Tomar Foto y Subir Archivo */}
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleImageFileSelect}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageFileSelect}
+                  />
+
                   <input
                     ref={inputRef}
                     type="text"
@@ -1828,37 +2007,95 @@ export default function ChatBotWidget() {
                         ? 'Micrófono en pausa: escribe tu consulta aquí...'
                         : isLoading
                         ? 'Valencia AI está procesando consulta...'
-                        : 'Consulta órdenes, stock, clientes o usa el micrófono...'
+                        : 'Consulta órdenes, stock, clientes o usa la cámara/mic...'
                     }
-                    className="w-full pr-8 py-1.5 bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full pr-16 py-1.5 bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed"
                   />
 
-                  {/* BOTÓN DE MICRÓFONO CON VALIDACIÓN DE ESTADO / SATURACIÓN */}
-                  <button
-                    type="button"
-                    onClick={handleMicClick}
-                    disabled={isLoading}
-                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                      voiceStatus.available === false
-                        ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 shadow-2xs'
-                        : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
-                    }`}
-                    title={
-                      voiceStatus.available === false
-                        ? '⚠️ Micrófono desactivado: la API de audio ha llegado a su límite de cuota o está saturada. Clic para ver opciones.'
-                        : `Grabar nota de voz (${voiceMode === 'direct' ? 'Envío directo' : 'Dictado'})`
-                    }
-                  >
-                    {voiceStatus.available === false ? (
-                      <div className="relative flex items-center justify-center">
-                        <MicOff className="w-4 h-4 text-amber-600" />
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping"></span>
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
-                      </div>
-                    ) : (
-                      <Mic className="w-4 h-4" />
-                    )}
-                  </button>
+                  {/* BOTONES DERECHA: CÁMARA + MICRÓFONO */}
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    {/* BOTÓN DE CÁMARA CON MENÚ FLOTANTE */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowCameraMenu((prev) => !prev)}
+                        disabled={isLoading}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer disabled:opacity-40"
+                        title="Escanear lista de compras con IA (Cámara / Archivo)"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+
+                      {/* MENÚ DE OPCIONES DE CÁMARA */}
+                      {showCameraMenu && (
+                        <div
+                          ref={cameraMenuRef}
+                          className="absolute right-0 bottom-full mb-2 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 w-52 z-30 animate-in fade-in slide-in-from-bottom-2"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCameraMenu(false);
+                              cameraInputRef.current?.click();
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition cursor-pointer"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                              <Camera className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800">Tomar foto</p>
+                              <p className="text-[10px] text-slate-400 font-normal">Cámara en vivo</p>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCameraMenu(false);
+                              fileInputRef.current?.click();
+                            }}
+                            className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 transition cursor-pointer"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                              <UploadCloud className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800">Subir desde archivos</p>
+                              <p className="text-[10px] text-slate-400 font-normal">Galería o imagen</p>
+                            </div>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* BOTÓN DE MICRÓFONO CON VALIDACIÓN DE ESTADO / SATURACIÓN */}
+                    <button
+                      type="button"
+                      onClick={handleMicClick}
+                      disabled={isLoading}
+                      className={`p-1.5 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                        voiceStatus.available === false
+                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-300/80 shadow-2xs'
+                          : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                      }`}
+                      title={
+                        voiceStatus.available === false
+                          ? '⚠️ Micrófono desactivado: la API de audio ha llegado a su límite de cuota o está saturada. Clic para ver opciones.'
+                          : `Grabar nota de voz (${voiceMode === 'direct' ? 'Envío directo' : 'Dictado'})`
+                      }
+                    >
+                      {voiceStatus.available === false ? (
+                        <div className="relative flex items-center justify-center">
+                          <MicOff className="w-4 h-4 text-amber-600" />
+                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping"></span>
+                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
+                        </div>
+                      ) : (
+                        <Mic className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <button
