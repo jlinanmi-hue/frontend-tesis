@@ -1131,6 +1131,13 @@ export const api = {
       const qs = new URLSearchParams(cleanParams).toString();
       return request(`/dashboard/semanas-del-anio${qs ? `?${qs}` : ''}`, options);
     },
+    explicarPeriodo: (datos, options = {}) =>
+      request('/dashboard/ia-explicar', {
+        method: 'POST',
+        body: datos,
+        timeout: 25000,
+        ...options,
+      }),
   },
 
   // 17. MÓDULO DE NOTIFICACIONES Y ALERTAS EN TIEMPO REAL

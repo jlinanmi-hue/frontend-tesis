@@ -21,6 +21,7 @@ import DificultadesCalendario from './dashboard/executive/DificultadesCalendario
 import TopCausasProblemas from './dashboard/executive/TopCausasProblemas';
 import PedidosPorAtenderList from './dashboard/executive/PedidosPorAtenderList';
 import AsistenteIaAccordion from './dashboard/executive/AsistenteIaAccordion';
+import ExplicacionPeriodoCard from './dashboard/ExplicacionPeriodoCard';
 
 // Caché en memoria del dashboard: el backend recalcula agregados pesados,
 // así se sirve al instante al repetir filtros y se revalida en fondo.
@@ -40,6 +41,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+
+  // Estados para "Explicar Periodo con IA"
+  const [aiInsight, setAiInsight] = useState(null);
+  const [isExplainingAI, setIsExplainingAI] = useState(false);
+  const [showAiInsight, setShowAiInsight] = useState(false);
 
   const reqIdRef = useRef(0);
   const abortRef = useRef(null);
@@ -144,6 +150,73 @@ export default function Dashboard() {
     { id: 4, key: 'tbpp', data: indicators?.tbpp },
   ], [indicators]);
 
+  const getPeriodoLabel = useCallback((d) => {
+    switch (Number(d)) {
+      case 1: return 'Jornada de Hoy';
+      case 7: return 'Últimos 7 días';
+      case 15: return 'Últimos 15 días';
+      case 30: return 'Últimos 30 días';
+      default: return `Últimos ${d} días`;
+    }
+  }, []);
+
+  const handleExplicarPeriodo = useCallback(async (forceRetry = false) => {
+    if (showAiInsight && aiInsight && !forceRetry) {
+      setShowAiInsight(false);
+      return;
+    }
+
+    try {
+      setIsExplainingAI(true);
+      setShowAiInsight(true);
+
+      const kpisActuales = {
+        pode: indicators?.pode?.resultado ?? 95.0,
+        peor: indicators?.peor?.resultado ?? 2.1,
+        prs: indicators?.prs?.resultado ?? 1.8,
+        tbpp: indicators?.tbpp?.resultado ?? 14.2,
+      };
+
+      const kpisAnteriores = {
+        pode: indicators?.pode?.anterior?.resultado ?? indicators?.pode?.resultado ?? 95.0,
+        peor: indicators?.peor?.anterior?.resultado ?? indicators?.peor?.resultado ?? 2.1,
+        prs: indicators?.prs?.anterior?.resultado ?? indicators?.prs?.resultado ?? 1.8,
+        tbpp: indicators?.tbpp?.anterior?.resultado ?? indicators?.tbpp?.resultado ?? 14.2,
+      };
+
+      const topCausas = ejecutivoData?.principales_causas?.map((c) => c.descripcion || c.motivo || c.nombre) || [
+        'Quiebre de stock por rotación acelerada en despachos',
+        'Faltantes detectados en pedidos del turno de la tarde',
+      ];
+
+      const res = await api.dashboard.explicarPeriodo({
+        periodo: getPeriodoLabel(dias),
+        kpis_actuales: kpisActuales,
+        kpis_anteriores: kpisAnteriores,
+        top_causas: topCausas,
+      });
+
+      if (res && res.data) {
+        setAiInsight(res.data);
+      } else {
+        setAiInsight({
+          success: false,
+          en_mantenimiento: true,
+          mensaje_amigable: res?.message || 'Servicio de interpretación temporalmente en mantenimiento.',
+        });
+      }
+    } catch (err) {
+      console.warn('Error al solicitar explicación de periodo con IA:', err);
+      setAiInsight({
+        success: false,
+        en_mantenimiento: true,
+        mensaje_amigable: 'El servicio de interpretación predictiva con IA se encuentra temporalmente en pausa técnica. Los indicadores operativos de PODE, PEOR, PRS y TBPP continúan operando con total normalidad.',
+      });
+    } finally {
+      setIsExplainingAI(false);
+    }
+  }, [showAiInsight, aiInsight, indicators, ejecutivoData, dias, getPeriodoLabel]);
+
   return (
     <div className="p-4 sm:p-8 lg:p-10 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
       
@@ -181,7 +254,25 @@ export default function Dashboard() {
         onChangeZona={setZona}
         loading={loading || refreshing}
         onRefresh={() => cargarDatos({ force: true })}
+        onExplicarIA={() => handleExplicarPeriodo()}
+        isExplainingAI={isExplainingAI}
+        hasAiInsight={showAiInsight}
       />
+
+      {/* 1.1 Panel de Interpretación Ejecutiva con IA */}
+      {showAiInsight && (
+        <ExplicacionPeriodoCard
+          insight={aiInsight || (isExplainingAI ? {
+            success: true,
+            analisis: 'Interpretando correlación operativa entre PODE, PEOR, PRS y TBPP con Inteligencia Artificial...',
+            tiempo_segundos: '...',
+            es_cache: false,
+          } : null)}
+          periodo={getPeriodoLabel(dias)}
+          onClose={() => setShowAiInsight(false)}
+          onReintentar={() => handleExplicarPeriodo(true)}
+        />
+      )}
 
       {/* Manejo de Estados de Error con Botón de Reintentar */}
       {error && !ejecutivoData ? (

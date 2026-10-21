@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, RefreshCw, MapPin, Store } from 'lucide-react';
+import { Calendar, RefreshCw, MapPin, Store, Sparkles } from 'lucide-react';
 import StyledSelect from '../filters/StyledSelect';
 
 export default function DashboardStickyFilters({
@@ -11,6 +11,9 @@ export default function DashboardStickyFilters({
   onChangeZona,
   loading = false,
   onRefresh,
+  onExplicarIA,
+  isExplainingAI = false,
+  hasAiInsight = false,
 }) {
   return (
     <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md py-3 px-4 sm:px-6 rounded-2xl border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-3 transition-all">
@@ -66,13 +69,30 @@ export default function DashboardStickyFilters({
 
       </div>
 
-      {/* Botón de Actualizar / Refresh */}
+      {/* Botones de Acción: Actualizar y Explicar con IA */}
       <div className="flex items-center gap-2">
+        {onExplicarIA && (
+          <button
+            type="button"
+            onClick={onExplicarIA}
+            disabled={loading || isExplainingAI}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50 ${
+              hasAiInsight
+                ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100/80'
+                : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-xs hover:shadow'
+            }`}
+            title="Generar interpretación ejecutiva instantánea de los KPIs con Inteligencia Artificial"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isExplainingAI ? 'animate-spin text-amber-300' : hasAiInsight ? 'text-blue-600' : 'text-blue-200'}`} />
+            <span>{isExplainingAI ? 'Interpretando...' : hasAiInsight ? 'Ocultar Análisis IA' : 'Explicar Periodo IA'}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold rounded-xl text-xs shadow-xs hover:shadow transition disabled:opacity-50 cursor-pointer"
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 font-semibold rounded-xl text-xs transition disabled:opacity-50 cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>{loading ? 'Actualizando...' : 'Actualizar'}</span>
