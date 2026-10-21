@@ -3812,7 +3812,7 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-700">Filtros y Búsqueda</span>
                 <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
-                  Mostrando {paginacion.total || historial.length || 0} órdenes
+                  Mostrando {paginacion.total || ordenesHistorial.length || 0} órdenes
                 </span>
               </div>
               {statsData?.conteo_estados?.pendientes > 0 && (

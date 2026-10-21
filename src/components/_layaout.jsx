@@ -43,6 +43,7 @@ import MiCuenta from './cuenta/MiCuenta';
 import ChatBotWidget from './chatbot/ChatBotWidget';
 import NotificacionesDropdown from './notificaciones/NotificacionesDropdown';
 import GestionNotificaciones from './notificaciones/GestionNotificaciones';
+import ErrorBoundary from './common/ErrorBoundary';
 
 export default function Layout({ user, onLogout, onUpdateUserData, children }) {
   // Estado de navegación activa (Pantalla de inicio: Indicadores Globales / Dashboard)
@@ -955,6 +956,7 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
 
         {/* Contenido Renderizado Dinámico */}
         <div className="p-8 max-w-[1440px] w-full mx-auto">
+          <ErrorBoundary resetKey={`${activeMenu}-${activeSubMenu}`}>
           {children ? (
             children
           ) : activeMenu === 'empresa' ? (
@@ -1041,6 +1043,7 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
               </button>
             </div>
           )}
+          </ErrorBoundary>
         </div>
       </main>
 

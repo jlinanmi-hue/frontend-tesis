@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Loader2, Maximize2, ThumbsUp, ThumbsDown, Check, AlertTriangle, Zap, Sparkles, Truck, Award, Building2 } from 'lucide-react';
 import api from '../../services/api';
 import IndicatorFilters from './filters/IndicatorFilters';
