@@ -32,17 +32,26 @@ export default function IndicatorModal({ indicatorId, indicatorData, onClose }) 
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const detailCacheRef = useRef(new Map());
   const [filters, setFilters] = useState({
     mes: indicatorData?.periodo || '2026-09',
     semana: indicatorData?.periodo || '2026-W37',
     canal: '',
   });
 
-  const cargarDetalle = useCallback(async () => {
+  const cargarDetalle = useCallback(async (force = false) => {
+    const cacheKey = `${indicatorId}|${filters.mes}|${filters.semana}|${filters.canal}`;
+    if (!force && detailCacheRef.current.has(cacheKey)) {
+      setData(detailCacheRef.current.get(cacheKey));
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await api.dashboard.detail(indicatorId, filters);
       if (res && res.success && res.data) {
+        detailCacheRef.current.set(cacheKey, res.data);
         setData(res.data);
       }
     } catch (err) {

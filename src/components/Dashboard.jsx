@@ -66,13 +66,18 @@ export default function Dashboard() {
     const ejecFresh = hit && (now - hit.ts) < EJEC_TTL_MS;
     const indFresh = indCache.data && (now - indCache.ts) < IND_TTL_MS;
 
-    // Vía rápida: caché vigente se muestra al instante y se revalida en fondo
+    // Vía rápida: caché vigente en memoria se muestra de inmediato sin lag
     if (!force && ejecFresh) {
       setEjecutivoData(hit.data);
       hasDataRef.current = true;
       if (indFresh) setIndicators(indCache.data);
       setError(null);
       setLoading(false);
+
+      // Si los datos están completamente frescos en memoria, no saturar la red
+      if (indFresh) {
+        return;
+      }
     } else if (!silent) {
       if (hasDataRef.current) setRefreshing(true);
       else setLoading(true);
@@ -80,13 +85,16 @@ export default function Dashboard() {
     if (!ejecFresh) setError(null);
 
     try {
-      // En paralelo (antes eran secuenciales: el doble de espera)
+      // Peticiones paralelas optimizadas con soporte para forzar refresco
+      const queryParams = {
+        dias,
+        canal_id: canal || undefined,
+        zona_id: zona || undefined,
+        ...(force ? { force: 1 } : {}),
+      };
       const [sE, sI] = await Promise.allSettled([
-        api.dashboard.ejecutivo(
-          { dias, canal_id: canal || undefined, zona_id: zona || undefined },
-          { signal: ctrl.signal, timeout: 20000 }
-        ),
-        api.dashboard.indicators({}, { signal: ctrl.signal, timeout: 20000 }),
+        api.dashboard.ejecutivo(queryParams, { signal: ctrl.signal, timeout: 20000 }),
+        api.dashboard.indicators(force ? { force: 1 } : {}, { signal: ctrl.signal, timeout: 20000 }),
       ]);
       if (reqIdRef.current !== myId) return; // ciclo ya superado por otro más nuevo
 

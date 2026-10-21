@@ -87,6 +87,7 @@ export default function ExportarFichaModal({
   const [errorConsolidado, setErrorConsolidado] = useState(null);
 
   const [descargando, setDescargando] = useState(false);
+  const modalCacheRef = useRef(new Map());
 
   // Sincronizar indicador si cambia desde el padre
   useEffect(() => {
@@ -98,6 +99,13 @@ export default function ExportarFichaModal({
   // Cargar Detalle Diario (Pestaña 1)
   // --------------------------------------------------------------------------
   const cargarDetalleDiario = useCallback(async () => {
+    const cacheKey = `diario|${fechaDiaria}|${indicadorDiario}|${canalDiario}`;
+    if (modalCacheRef.current.has(cacheKey)) {
+      setFichaDiariaData(modalCacheRef.current.get(cacheKey));
+      setLoadingDiario(false);
+      return;
+    }
+
     setLoadingDiario(true);
     setErrorDiario(null);
     try {
@@ -108,6 +116,7 @@ export default function ExportarFichaModal({
       });
 
       if (res && res.success && res.data) {
+        modalCacheRef.current.set(cacheKey, res.data);
         setFichaDiariaData(res.data);
       } else {
         throw new Error(res?.message || 'No se pudo cargar el detalle diario.');
@@ -139,6 +148,13 @@ export default function ExportarFichaModal({
 
   const cargarDetalleSemana = useCallback(async () => {
     if (!semanaSeleccionada) return;
+    const cacheKey = `semana|${anioSemana}|${semanaSeleccionada}|${canalSemana}`;
+    if (modalCacheRef.current.has(cacheKey)) {
+      setDetalleSemanaData(modalCacheRef.current.get(cacheKey));
+      setLoadingSemana(false);
+      return;
+    }
+
     setLoadingSemana(true);
     setErrorSemana(null);
     try {
@@ -149,6 +165,7 @@ export default function ExportarFichaModal({
       });
 
       if (res && res.success && res.data) {
+        modalCacheRef.current.set(cacheKey, res.data);
         setDetalleSemanaData(res.data);
       } else {
         throw new Error(res?.message || 'No se pudo cargar el detalle de la semana.');
@@ -165,6 +182,13 @@ export default function ExportarFichaModal({
   // Cargar Consolidado Semanal/Mensual (Pestaña 3)
   // --------------------------------------------------------------------------
   const cargarConsolidado = useCallback(async () => {
+    const cacheKey = `consolidado|${tipoConsolidado}|${anioConsolidado}|${canalConsolidado}`;
+    if (modalCacheRef.current.has(cacheKey)) {
+      setConsolidadoData(modalCacheRef.current.get(cacheKey));
+      setLoadingConsolidado(false);
+      return;
+    }
+
     setLoadingConsolidado(true);
     setErrorConsolidado(null);
     try {
@@ -175,6 +199,7 @@ export default function ExportarFichaModal({
       });
 
       if (res && res.success && res.data) {
+        modalCacheRef.current.set(cacheKey, res.data);
         setConsolidadoData(res.data);
       } else {
         throw new Error(res?.message || 'No se pudo cargar el reporte consolidado.');
