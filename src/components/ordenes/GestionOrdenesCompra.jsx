@@ -1136,28 +1136,6 @@ export default function GestionOrdenesCompra({
         </div>
       </div>
 
-      {/* BANNER SUGERENCIAS DE REABASTECIMIENTO */}
-      {onNavigateToPredicciones && (
-        <button
-          type="button"
-          onClick={onNavigateToPredicciones}
-          className="w-full bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 hover:from-emerald-500/15 hover:to-blue-500/15 border border-emerald-200/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs transition cursor-pointer text-left"
-        >
-          <span className="flex items-center gap-2.5 min-w-0">
-            <span className="p-1.5 bg-emerald-500 text-white rounded-lg shadow-xs shrink-0">
-              <Zap className="w-4 h-4" />
-            </span>
-            <span className="text-xs text-slate-600 truncate">
-              <strong className="text-slate-800">¿Qué compro esta semana?</strong>
-              <span className="hidden sm:inline"> Ver sugerencias de reabastecimiento basadas en tu consumo.</span>
-            </span>
-          </span>
-          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl shrink-0">
-            Ver Sugerencias
-          </span>
-        </button>
-      )}
-
       {/* ========================================================================= */}
       {/* VISTA 1: GENERAR NUEVA ORDEN DE COMPRA (flujo por pasos)                */}
       {/* ========================================================================= */}
