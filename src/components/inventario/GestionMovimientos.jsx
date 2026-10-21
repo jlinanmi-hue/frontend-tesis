@@ -27,6 +27,7 @@ import {
   Scale,
   Printer,
   Sliders,
+  Plus,
 } from 'lucide-react';
 import api from '../../services/api';
 import { sileo } from 'sileo';
@@ -41,12 +42,15 @@ export default function GestionMovimientos() {
     current_page: 1,
     last_page: 1,
     total: 0,
-    per_page: 8,
+    per_page: 10,
   });
 
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSelects, setIsLoadingSelects] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modal para Agregar Entrada Manual de Stock
+  const [isModalIngresoOpen, setIsModalIngresoOpen] = useState(false);
 
   // Modal de Detalle de Movimiento (Ojito)
   const [isModalDetalleOpen, setIsModalDetalleOpen] = useState(false);
@@ -73,7 +77,7 @@ export default function GestionMovimientos() {
   const [filtroDias, setFiltroDias] = useState(''); // '' | '1' | '7' | '15' | '30'
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Formulario de Movimiento (Réplica de la interfaz de referencia)
+  // Formulario de Entrada Manual de Stock
   const getNowDateTimeLocal = () => {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -81,7 +85,7 @@ export default function GestionMovimientos() {
   };
 
   const initialFormState = {
-    tipoMovimiento: 'E', // Siempre Entrada
+    tipoMovimiento: 'E', // Siempre Entrada en este modal
     productoId: '',
     unidadesMedidaId: '',
     cantidad: 1,
@@ -95,7 +99,7 @@ export default function GestionMovimientos() {
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
 
-  // Buscador interactivo de Producto
+  // Buscador interactivo de Producto dentro del modal
   const [searchProducto, setSearchProducto] = useState('');
   const [isDropdownProductoOpen, setIsDropdownProductoOpen] = useState(false);
   const productoDropdownRef = useRef(null);
@@ -113,7 +117,7 @@ export default function GestionMovimientos() {
     };
   }, []);
 
-  // Lista de productos filtrados según la búsqueda
+  // Lista de productos filtrados según la búsqueda en el modal
   const productosFiltrados = productosSelect.filter((p) => {
     if (!searchProducto.trim()) return true;
     const term = searchProducto.toLowerCase();
@@ -158,6 +162,19 @@ export default function GestionMovimientos() {
     setIsDropdownProductoOpen(true);
   };
 
+  const handleCerrarModalIngreso = () => {
+    setIsModalIngresoOpen(false);
+    setFormData({
+      ...initialFormState,
+      tipoMovimiento: 'E',
+      fechaMovimiento: getNowDateTimeLocal(),
+    });
+    setProductoSeleccionado(null);
+    setUnidadSeleccionada(null);
+    setSearchProducto('');
+    setIsDropdownProductoOpen(false);
+  };
+
   // Cargar selector ligero de productos
   const cargarProductosSelect = async () => {
     setIsLoadingSelects(true);
@@ -173,13 +190,13 @@ export default function GestionMovimientos() {
     }
   };
 
-  // Cargar tabla de movimientos desde el backend paginado a 8 registros
+  // Cargar tabla de movimientos desde el backend paginado a 10 registros
   const cargarMovimientos = async (page = 1) => {
     setIsLoading(true);
     try {
       const params = {
         page,
-        per_page: 8,
+        per_page: 10,
       };
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();
@@ -202,7 +219,7 @@ export default function GestionMovimientos() {
           current_page: pagData.current_page || 1,
           last_page: pagData.last_page || 1,
           total: pagData.total || 0,
-          per_page: pagData.per_page || 8,
+          per_page: pagData.per_page || 10,
         });
       }
     } catch (err) {
@@ -375,7 +392,7 @@ export default function GestionMovimientos() {
       case 'VENTA':
         return (
           <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-            Venta
+            Venta Pedido
           </span>
         );
       case 'INVENTARIO_INICIAL':
@@ -393,30 +410,7 @@ export default function GestionMovimientos() {
     }
   };
 
-  // Cuando cambia el producto seleccionado en el combo
-  const handleProductoChange = (e) => {
-    const id = e.target.value;
-    const prod = productosSelect.find((p) => p.ProductoId === id) || null;
-
-    setProductoSeleccionado(prod);
-    setUnidadSeleccionada(null);
-
-    // Seleccionar automáticamente la primera unidad disponible (generalmente la base)
-    const primeraUnidad = prod?.unidades?.[0] || null;
-
-    setFormData((prev) => ({
-      ...prev,
-      productoId: id,
-      unidadesMedidaId: primeraUnidad ? primeraUnidad.unidades_medidaId : '',
-      precioUnitario: primeraUnidad ? primeraUnidad.precio_compra : '',
-    }));
-
-    if (primeraUnidad) {
-      setUnidadSeleccionada(primeraUnidad);
-    }
-  };
-
-  // Cuando cambia la unidad de medida seleccionada
+  // Cuando cambia la unidad de medida seleccionada en el formulario
   const handleUnidadChange = (e) => {
     const uId = e.target.value;
     const und = productoSeleccionado?.unidades?.find((u) => u.unidades_medidaId === uId) || null;
@@ -428,7 +422,7 @@ export default function GestionMovimientos() {
     }));
   };
 
-  // Enviar Formulario de Registro (Exclusivo Entrada de Mercadería)
+  // Enviar Formulario de Registro (Exclusivo Entrada de Mercadería en Modal)
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -486,16 +480,8 @@ export default function GestionMovimientos() {
           description: `Se ingresaron ${cantidadNum} ${unidadSeleccionada?.descripcion || 'unidades'} de "${productoSeleccionado?.ProductoNombre}" al stock.`,
         });
 
-        // Limpiar formulario conservando fecha y hora actualizada
-        setFormData({
-          ...initialFormState,
-          tipoMovimiento: 'E',
-          fechaMovimiento: getNowDateTimeLocal(),
-        });
-        setProductoSeleccionado(null);
-        setUnidadSeleccionada(null);
-        setSearchProducto('');
-        setIsDropdownProductoOpen(false);
+        // Limpiar y cerrar modal
+        handleCerrarModalIngreso();
 
         // Recargar datos y selector ligero (para actualizar stock en combos)
         cargarMovimientos(1);
@@ -517,367 +503,91 @@ export default function GestionMovimientos() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado Principal */}
+      {/* =========================================================================
+          ENCABEZADO PRINCIPAL (Estilo ERP Limpio y Realista)
+         ========================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Gestión de Inventario</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Kárdex de Inventario</h1>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+              {paginacion.total} movimientos
+            </span>
+          </div>
           <p className="text-sm text-slate-500 mt-1">
-            Controla las entradas y salidas de mercadería, asegurando la trazabilidad.
+            Registro cronológico oficial de todas las entradas, salidas y saldos físicos de mercadería.
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            cargarMovimientos(currentPage);
-            cargarProductosSelect();
-          }}
-          disabled={isLoading}
-          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-slate-800 rounded-lg border border-slate-200 transition-colors cursor-pointer self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
-          Actualizar Trazabilidad
-        </button>
+        <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+          <button
+            onClick={() => setIsModalIngresoOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs shadow-emerald-600/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Agregar Entrada de Stock Manual</span>
+          </button>
+
+          <button
+            onClick={() => {
+              cargarMovimientos(currentPage);
+              cargarProductosSelect();
+            }}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-slate-800 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+            title="Refrescar datos del kárdex"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>Actualizar</span>
+          </button>
+        </div>
       </div>
 
-      {/* Grid Principal: 2 Contenedores (Izquierda: Formulario | Derecha: Tabla de Trazabilidad) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* =========================================================================
-            CONTENEDOR IZQUIERDO: Ingreso Manual y Registro de Stock (Réplica Fiel)
-           ========================================================================= */}
-        <div className="lg:col-span-5 bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500/30 shadow-xs space-y-5 relative">
-          {/* Título del Contenedor con Ícono Verde */}
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                ⊕
-              </div>
-              <h2 className="text-base font-bold text-slate-800">
-                Ingreso Manual y Registro de Stock
-              </h2>
-            </div>
-            <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-              Recepción / Compras
-            </span>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. Buscador de Producto */}
-            <div ref={productoDropdownRef} className="relative">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Seleccionar Producto <span className="text-rose-500">*</span>
-                </label>
-                {productoSeleccionado && (
-                  <button
-                    type="button"
-                    onClick={handleLimpiarProductoSeleccionado}
-                    className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Cambiar producto</span>
-                  </button>
-                )}
-              </div>
-
-              {!productoSeleccionado ? (
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    disabled={isLoadingSelects}
-                    placeholder="Buscar producto por nombre, marca o código..."
-                    value={searchProducto}
-                    onChange={(e) => {
-                      setSearchProducto(e.target.value);
-                      setIsDropdownProductoOpen(true);
-                    }}
-                    onFocus={() => setIsDropdownProductoOpen(true)}
-                    className="w-full pl-9.5 pr-8 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white text-slate-800 transition-colors"
-                  />
-                  {searchProducto && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchProducto('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-
-                  {/* Menú flotante de resultados filtrados */}
-                  {isDropdownProductoOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-40 max-h-60 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-                      {productosFiltrados.length === 0 ? (
-                        <div className="p-4 text-center text-slate-400 text-xs">
-                          <Package className="w-6 h-6 mx-auto mb-1 text-slate-300" />
-                          <p className="font-semibold text-slate-600">No se encontraron productos</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            {searchProducto
-                              ? `No hay coincidencias con "${searchProducto}"`
-                              : 'No hay productos disponibles'}
-                          </p>
-                        </div>
-                      ) : (
-                        productosFiltrados.map((p) => {
-                          const stockNum = parseFloat(p.ProductoStockActual ?? 0);
-                          const costoRef = parseFloat(
-                            p.unidades?.[0]?.precio_compra || p.precio_compra || 0
-                          );
-
-                          return (
-                            <button
-                              key={p.ProductoId}
-                              type="button"
-                              onClick={() => handleSeleccionarProducto(p)}
-                              className="w-full p-3 text-left hover:bg-emerald-50/70 transition flex items-center justify-between gap-3 cursor-pointer group"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-slate-800 text-xs group-hover:text-emerald-700 transition-colors truncate">
-                                    {p.ProductoNombre}
-                                  </span>
-                                  <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-                                    {p.ProductoId}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                                  Marca: <strong>{p.ProductoMarca || 'Genérica'}</strong> · Cat: {p.categoria_nombre || 'General'}
-                                  {costoRef > 0 && ` · Costo: S/ ${costoRef.toFixed(2)}`}
-                                </p>
-                              </div>
-
-                              <div className="text-right shrink-0">
-                                <span
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                    stockNum > 0
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  }`}
-                                >
-                                  Stock: {stockNum.toLocaleString()}
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* Tarjeta del producto seleccionado */
-                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-150">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <Package className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-900 text-xs">
-                          {productoSeleccionado.ProductoNombre}
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-600 bg-white px-1.5 py-0.5 rounded border border-emerald-100">
-                          {productoSeleccionado.ProductoId}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 mt-0.5 truncate">
-                        Marca: <strong>{productoSeleccionado.ProductoMarca || 'Genérica'}</strong> · Cat: {productoSeleccionado.categoria_nombre || 'General'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block leading-tight">Stock Actual</span>
-                      <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md inline-block">
-                        {productoSeleccionado.stock_actual_texto}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleLimpiarProductoSeleccionado}
-                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg transition cursor-pointer"
-                      title="Cambiar producto"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+      {/* =========================================================================
+          TABLA PRINCIPAL DEL KÁRDEX (Ocupa el 100% del Ancho, Vista Realista)
+         ========================================================================= */}
+      <div className="w-full bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+        {/* Barra Superior de Control y Filtros de Kárdex */}
+        <div className="space-y-3 pb-2">
+          {/* Fila 1: Buscador y Tipo de Movimiento (Entradas / Salidas / Todos) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Buscador Rápido de Movimientos */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Buscar por producto, código, documento (OC, Guía, Factura) o motivo..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-9 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors text-slate-800"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
 
-            {/* 2. Cantidad y Unidad de Medida (Grid de 2 columnas) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Cantidad <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="1"
-                  value={formData.cantidad}
-                  onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white transition-colors font-semibold text-slate-800"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Unidad de Medida <span className="text-rose-500">*</span>
-                </label>
-                <StyledSelect
-                  size="form"
-                  value={formData.unidadesMedidaId}
-                  onChange={(v) => handleUnidadChange({ target: { value: v } })}
-                  options={[
-                    { value: '', label: '-- Seleccionar --' },
-                    ...(productoSeleccionado?.unidades || []).map((u) => ({
-                      value: u.unidades_medidaId,
-                      label: `${u.descripcion} (Factor: ${u.factor_conversion})`,
-                    })),
-                  ]}
-                  disabled={!productoSeleccionado || productoSeleccionado?.unidades?.length === 0}
-                  placeholder="-- Seleccionar --"
-                  searchable
-                  ariaLabel="Unidad de medida del movimiento"
-                  panelWidth={240}
-                />
-              </div>
-            </div>
-
-            {/* 3. Precios (Costo de Entrada del Lote & Precio Sugerido) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 rounded-xl border border-slate-100">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Costo Entrada (S/)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">S/</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={formData.precioUnitario}
-                    onChange={(e) => setFormData({ ...formData, precioUnitario: e.target.value })}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 font-semibold text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Precio Sugerido Venta
-                </label>
-                <div className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-semibold flex items-center justify-between">
-                  <span>{unidadSeleccionada?.precio_venta_formateado || 'S/ 0.00'}</span>
-                  {unidadSeleccionada?.margen_porcentaje && (
-                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
-                      {unidadSeleccionada.margen_porcentaje}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 4. Número de Guía / Factura */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Número de Guía / Factura
-              </label>
-              <input
-                type="text"
-                maxLength={45}
-                placeholder="Ej: F001-492"
-                value={formData.documentoOperacionId}
-                onChange={(e) => setFormData({ ...formData, documentoOperacionId: e.target.value })}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white transition-colors"
-              />
-            </div>
-
-            {/* 5. Fechas (Fecha de Ingreso & Fecha Aprox de Salida) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Fecha y Hora de Ingreso
-                </label>
-                <div className="relative">
-                  <input
-                    type="datetime-local"
-                    required
-                    value={formData.fechaMovimiento}
-                    onChange={(e) => setFormData({ ...formData, fechaMovimiento: e.target.value })}
-                    className="w-full px-3 py-2 text-xs bg-emerald-50/50 border border-emerald-200 rounded-xl focus:outline-hidden focus:border-emerald-500 text-slate-800 font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Fecha (Aprox) de Salida
-                </label>
-                <div className="relative">
-                  <StyledDatePicker
-                    value={formData.fechaAproxSalida}
-                    onChange={(v) => setFormData({ ...formData, fechaAproxSalida: v })}
-                    size="form"
-                    ariaLabel="Fecha aproximada de salida"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 6. Botón de Acción Principal Verde */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-3 px-4 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" /> Procesando Entrada en Servidor...
-                  </>
-                ) : (
-                  <>
-                    <ArrowDownRight className="w-4 h-4 stroke-[3]" /> Registrar Entrada de Mercadería
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* =========================================================================
-            CONTENEDOR DERECHO: Tabla de Trazabilidad y Fechas de Control (Réplica Fiel)
-           ========================================================================= */}
-        <div className="lg:col-span-7 bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-          {/* Encabezado del Contenedor con Ícono Azul */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                📊
-              </div>
-              <h2 className="text-base font-bold text-slate-800">
-                Tabla de Trazabilidad y Fechas de Control
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Filtros de Tipo */}
-              <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-xs font-semibold">
+            {/* Segmented Control: Tipo de Movimiento */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex p-1 bg-slate-100/90 rounded-xl text-xs font-semibold border border-slate-200/60">
                 <button
                   type="button"
                   onClick={() => {
                     setFiltroTipo('');
                     setCurrentPage(1);
                   }}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === '' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    filtroTipo === ''
+                      ? 'bg-white text-slate-800 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  Todos
+                  Todos los Tipos
                 </button>
                 <button
                   type="button"
@@ -886,9 +596,14 @@ export default function GestionMovimientos() {
                     setFiltroSubtipo('');
                     setCurrentPage(1);
                   }}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'E' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-emerald-700'}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    filtroTipo === 'E'
+                      ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-emerald-700'
+                  }`}
                 >
-                  Entradas
+                  <ArrowDownRight className="w-3.5 h-3.5" />
+                  <span>Entradas (E)</span>
                 </button>
                 <button
                   type="button"
@@ -897,247 +612,619 @@ export default function GestionMovimientos() {
                     setFiltroSubtipo('');
                     setCurrentPage(1);
                   }}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filtroTipo === 'S' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-500 hover:text-rose-700'}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    filtroTipo === 'S'
+                      ? 'bg-rose-600 text-white shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-rose-700'
+                  }`}
                 >
-                  Salidas
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Salidas (S)</span>
                 </button>
               </div>
-            </div>
-          </div>
 
-          {/* Filtros Rápidos: Buscador, Subtipo y Selector de Período */}
-          <div className="space-y-2.5">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar por producto, documento o motivo..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-white transition-colors"
-              />
-            </div>
-
-            {/* Filtro por Subtipo de Operación */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
-                <Tag className="w-3 h-3 text-slate-400" /> Subtipo:
-              </span>
-              {[
-                { label: 'Todos', value: '' },
-                { label: 'Recepción OC', value: 'RECEPCION_OC' },
-                { label: 'Anulación OC', value: 'ANULACION_RECEPCION' },
-                { label: 'Compra Rápida', value: 'COMPRA_RAPIDA' },
-                { label: 'Ajuste Manual', value: 'AJUSTE_MANUAL' },
-                { label: 'Devolución', value: 'DEVOLUCION_CLIENTE' },
-                { label: 'Despacho Venta', value: 'VENTA_PEDIDO' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    setFiltroSubtipo(opt.value);
-                    if (opt.value) {
-                      setFiltroTipo('');
-                    }
-                    setCurrentPage(1);
-                  }}
-                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                    filtroSubtipo === opt.value
-                      ? 'bg-purple-600 text-white shadow-xs font-bold'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Selector de Período (1 día, 7 días, 15 días, 30 días) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
-                <Calendar className="w-3 h-3 text-slate-400" /> Período:
-              </span>
-              {[
-                { label: 'Todos', value: '' },
-                { label: 'Hace 1 día', value: '1' },
-                { label: 'Hace 7 días', value: '7' },
-                { label: 'Hace 15 días', value: '15' },
-                { label: 'Hace 30 días', value: '30' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    setFiltroDias(opt.value);
-                    setCurrentPage(1);
-                  }}
-                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                    filtroDias === opt.value
-                      ? 'bg-blue-600 text-white shadow-xs font-bold'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tabla de Movimientos / Kardex */}
-          <div className="border border-slate-200/80 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-3.5">PRODUCTO</th>
-                    <th className="py-3 px-3.5 text-center">CANT. / UM</th>
-                    <th className="py-3 px-3.5">GUÍA / FACT</th>
-                    <th className="py-3 px-3.5 bg-emerald-50/50 text-emerald-800 text-center">FECHA INGRESO</th>
-                    <th className="py-3 px-3.5 bg-amber-50/40 text-amber-800 text-center">FECHA SALIDA</th>
-                    <th className="py-3 px-3.5 text-right">SALDO STOCK</th>
-                    <th className="py-3 px-3 text-center">ACCIONES</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan="7" className="py-14 text-center text-slate-400">
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
-                        Sincronizando trazabilidad desde el servidor...
-                      </td>
-                    </tr>
-                  ) : movimientos.length === 0 ? (
-                    <tr>
-                      <td colSpan="7" className="py-12 text-center text-slate-400">
-                        No hay movimientos registrados que coincidan con la búsqueda.
-                      </td>
-                    </tr>
-                  ) : (
-                    movimientos.map((m) => {
-                      const esEntrada = m.tipo_movimiento_badge === 'ENTRADA';
-                      return (
-                        <tr key={m.Movimiento_productoId} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="py-3 px-3.5">
-                            <div className="font-bold text-slate-800">{m.producto_nombre}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {m.producto_marca || 'Genérico'} · {m.categoria_nombre}
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3.5 text-center">
-                            <span
-                              className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold ${
-                                esEntrada
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                                  : 'bg-rose-50 text-rose-700 border border-rose-200/60'
-                              }`}
-                            >
-                              {m.cantidad_presentacion_texto}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3.5">
-                            <div className="font-mono text-slate-700 font-bold">
-                              {m.documento_referencia || m.documento_operacion_id || m.Movimiento_productoDocumentoOperacionId || '—'}
-                            </div>
-                            <div className="mt-1">
-                              {renderBadgeSubtipo(m.subtipo || m.Movimiento_productoSubtipo)}
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-3.5 text-center font-mono text-emerald-800 bg-emerald-50/30 font-semibold">
-                            {esEntrada ? (
-                              <div className="leading-tight">
-                                <div>{m.fecha_solo}</div>
-                                {m.hora_solo && (
-                                  <div className="text-[10px] text-emerald-600 font-medium tracking-tight mt-0.5">
-                                    {m.hora_solo}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-
-                          <td className="py-3 px-3.5 text-center font-mono text-amber-800 bg-amber-50/20 font-semibold">
-                            {!esEntrada ? (
-                              <div className="leading-tight">
-                                <div>{m.fecha_solo}</div>
-                                {m.hora_solo && (
-                                  <div className="text-[10px] text-amber-600 font-medium tracking-tight mt-0.5">
-                                    {m.hora_solo}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-
-                          <td className="py-3 px-3.5 text-right font-bold text-slate-800">
-                            {m.saldo_resultante_texto}
-                          </td>
-
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleVerDetalle(m)}
-                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-slate-200/80 hover:border-blue-200 shadow-2xs"
-                                title="Ver detalle del movimiento"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleImprimirOficial(m)}
-                                className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center border border-slate-200/80 hover:border-blue-200 shadow-2xs"
-                                title="Imprimir Orden Oficial de Movimiento"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginador (Paginado a 8 registros por página) */}
-            <div className="p-3 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-              <span>
-                Total: <strong className="text-slate-700">{paginacion.total}</strong> movimientos registrados
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={paginacion.current_page <= 1}
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  className="p-1 text-slate-600 hover:bg-slate-200/80 rounded-md disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="px-2 font-semibold text-slate-800">
-                  Página {paginacion.current_page} de {paginacion.last_page}
+              {/* Selector de Período Rápido */}
+              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-slate-400" /> Período:
                 </span>
-                <button
-                  type="button"
-                  disabled={paginacion.current_page >= paginacion.last_page}
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, paginacion.last_page))}
-                  className="p-1 text-slate-600 hover:bg-slate-200/80 rounded-md disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                {[
+                  { label: 'Todos', value: '' },
+                  { label: 'Hoy', value: '1' },
+                  { label: '7d', value: '7' },
+                  { label: '15d', value: '15' },
+                  { label: '30d', value: '30' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setFiltroDias(opt.value);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                      filtroDias === opt.value
+                        ? 'bg-blue-600 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            </div>
+          </div>
+
+          {/* Fila 2: Filtro por Subtipo de Operación (Pills Horizontales) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 border-t border-slate-100">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
+              <Tag className="w-3 h-3 text-slate-400" /> Operación:
+            </span>
+            {[
+              { label: 'Todos', value: '' },
+              { label: 'Recepción OC', value: 'RECEPCION_OC' },
+              { label: 'Anulación OC', value: 'ANULACION_RECEPCION' },
+              { label: 'Compra Rápida', value: 'COMPRA_RAPIDA' },
+              { label: 'Ajuste Manual', value: 'AJUSTE_MANUAL' },
+              { label: 'Devolución', value: 'DEVOLUCION_CLIENTE' },
+              { label: 'Despacho Venta', value: 'VENTA_PEDIDO' },
+              { label: 'Inv. Inicial', value: 'INVENTARIO_INICIAL' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  setFiltroSubtipo(opt.value);
+                  if (opt.value) {
+                    setFiltroTipo('');
+                  }
+                  setCurrentPage(1);
+                }}
+                className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  filtroSubtipo === opt.value
+                    ? 'bg-purple-600 text-white shadow-xs font-bold'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tabla Full-Width de Movimientos del Kárdex */}
+        <div className="border border-slate-200/80 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                  <th className="py-3 px-4">FECHA Y HORA</th>
+                  <th className="py-3 px-3 text-center">TIPO</th>
+                  <th className="py-3 px-4">DOCUMENTO / OPERACIÓN</th>
+                  <th className="py-3 px-4">PRODUCTO / ITEM</th>
+                  <th className="py-3 px-3.5 text-center">CANTIDAD OPERADA</th>
+                  <th className="py-3 px-4 text-right">SALDO STOCK</th>
+                  <th className="py-3 px-3.5 text-right">COSTO REF.</th>
+                  <th className="py-3 px-3.5">RESPONSABLE</th>
+                  <th className="py-3 px-3 text-center">ACCIONES</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan="9" className="py-16 text-center text-slate-400">
+                      <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
+                      Cargando movimientos del kárdex...
+                    </td>
+                  </tr>
+                ) : movimientos.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="py-14 text-center text-slate-400">
+                      <Package className="w-7 h-7 mx-auto mb-2 text-slate-300" />
+                      <p className="font-semibold text-slate-600">No se encontraron movimientos registrados</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Prueba ajustando los filtros de búsqueda, fechas o tipo de movimiento.
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  movimientos.map((m) => {
+                    const esEntrada = (
+                      m.tipo_movimiento_badge === 'ENTRADA' ||
+                      m.Movimiento_productoTipoMovimiento === 'E' ||
+                      m.tipo_movimiento === 'E' ||
+                      m.tipo === 'E'
+                    );
+
+                    return (
+                      <tr key={m.Movimiento_productoId} className="hover:bg-slate-50/70 transition-colors">
+                        {/* 1. Fecha y Hora */}
+                        <td className="py-3 px-4">
+                          <div className="font-mono font-bold text-slate-800 text-xs">
+                            {m.fecha_solo || '—'}
+                          </div>
+                          {m.hora_solo && (
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono mt-0.5">
+                              <Clock className="w-2.5 h-2.5 text-slate-400" />
+                              <span>{m.hora_solo}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 2. Tipo de Movimiento (Badge Realista) */}
+                        <td className="py-3 px-3 text-center">
+                          {esEntrada ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                              <ArrowDownRight className="w-3 h-3 stroke-[2.5]" />
+                              <span>Entrada</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80">
+                              <ArrowUpRight className="w-3 h-3 stroke-[2.5]" />
+                              <span>Salida</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 3. Documento y Operación */}
+                        <td className="py-3 px-4">
+                          <div className="font-mono font-bold text-slate-800 text-xs">
+                            {m.documento_referencia || m.documento_operacion_id || m.Movimiento_productoDocumentoOperacionId || 'S/N'}
+                          </div>
+                          <div className="mt-1">
+                            {renderBadgeSubtipo(m.subtipo || m.Movimiento_productoSubtipo)}
+                          </div>
+                        </td>
+
+                        {/* 4. Producto / Item */}
+                        <td className="py-3 px-4 max-w-xs">
+                          <div className="font-bold text-slate-800 truncate" title={m.producto_nombre}>
+                            {m.producto_nombre}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5 truncate flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-slate-400 bg-slate-100 px-1 rounded">
+                              {m.producto_id || m.Movimiento_producto_ProductoId}
+                            </span>
+                            <span>·</span>
+                            <span>{m.producto_marca || 'Genérico'}</span>
+                            <span>·</span>
+                            <span>{m.categoria_nombre || 'General'}</span>
+                          </div>
+                        </td>
+
+                        {/* 5. Cantidad Operada */}
+                        <td className="py-3 px-3.5 text-center">
+                          <div
+                            className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold ${
+                              esEntrada
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200/60'
+                            }`}
+                          >
+                            {m.cantidad_presentacion_texto}
+                          </div>
+                          {m.cantidad_base_texto && (
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              ({m.cantidad_base_texto})
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 6. Saldo Stock Resultante */}
+                        <td className="py-3 px-4 text-right">
+                          <span className="font-mono font-bold text-slate-900 bg-slate-100/90 px-2 py-0.5 rounded border border-slate-200/60">
+                            {m.saldo_resultante_texto}
+                          </span>
+                        </td>
+
+                        {/* 7. Costo / Precio */}
+                        <td className="py-3 px-3.5 text-right">
+                          <div className="font-semibold text-slate-700">
+                            {m.costo_precio_formateado || 'S/ 0.00'}
+                          </div>
+                          {m.costo_total_formateado && m.costo_total_formateado !== 'S/ 0.00' && (
+                            <div className="text-[10px] text-slate-400">
+                              Tot: {m.costo_total_formateado}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 8. Responsable */}
+                        <td className="py-3 px-3.5">
+                          <span className="text-slate-600 font-medium truncate block max-w-[120px]" title={m.usuario_creacion || 'Sistema'}>
+                            {m.usuario_creacion || 'Sistema'}
+                          </span>
+                        </td>
+
+                        {/* 9. Acciones */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleVerDetalle(m)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer border border-slate-200 hover:border-blue-200 shadow-2xs"
+                              title="Ver detalle del movimiento"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleImprimirOficial(m)}
+                              className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer border border-slate-200 hover:border-blue-200 shadow-2xs"
+                              title="Imprimir Orden Oficial de Movimiento"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginador (Paginado a 10 registros por página) */}
+          <div className="p-3.5 bg-slate-50/80 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              Total: <strong className="text-slate-700">{paginacion.total}</strong> movimientos registrados
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={paginacion.current_page <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                className="p-1 text-slate-600 hover:bg-slate-200/80 rounded-md disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="px-2 font-semibold text-slate-800">
+                Página {paginacion.current_page} de {paginacion.last_page}
+              </span>
+              <button
+                type="button"
+                disabled={paginacion.current_page >= paginacion.last_page}
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, paginacion.last_page))}
+                className="p-1 text-slate-600 hover:bg-slate-200/80 rounded-md disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* =========================================================================
+          MODAL EMERGENTE: Registrar Entrada Manual de Mercadería
+         ========================================================================= */}
+      {isModalIngresoOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150">
+            {/* Cabecera del Modal */}
+            <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs font-bold">
+                  <ArrowDownRight className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">
+                    Registrar Entrada Manual de Stock
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Ingreso directo de mercadería y actualización inmediata del inventario físico.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCerrarModalIngreso}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Formulario dentro del Modal */}
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              {/* 1. Buscador de Producto */}
+              <div ref={productoDropdownRef} className="relative">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Seleccionar Producto <span className="text-rose-500">*</span>
+                  </label>
+                  {productoSeleccionado && (
+                    <button
+                      type="button"
+                      onClick={handleLimpiarProductoSeleccionado}
+                      className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Cambiar producto</span>
+                    </button>
+                  )}
+                </div>
+
+                {!productoSeleccionado ? (
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      disabled={isLoadingSelects}
+                      placeholder="Buscar producto por nombre, marca o código..."
+                      value={searchProducto}
+                      onChange={(e) => {
+                        setSearchProducto(e.target.value);
+                        setIsDropdownProductoOpen(true);
+                      }}
+                      onFocus={() => setIsDropdownProductoOpen(true)}
+                      className="w-full pl-9.5 pr-8 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white text-slate-800 transition-colors"
+                    />
+                    {searchProducto && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchProducto('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Menú flotante de resultados filtrados */}
+                    {isDropdownProductoOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-40 max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
+                        {productosFiltrados.length === 0 ? (
+                          <div className="p-4 text-center text-slate-400 text-xs">
+                            <Package className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                            <p className="font-semibold text-slate-600">No se encontraron productos</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {searchProducto
+                                ? `No hay coincidencias con "${searchProducto}"`
+                                : 'No hay productos disponibles'}
+                            </p>
+                          </div>
+                        ) : (
+                          productosFiltrados.map((p) => {
+                            const stockNum = parseFloat(p.ProductoStockActual ?? 0);
+                            const costoRef = parseFloat(
+                              p.unidades?.[0]?.precio_compra || p.precio_compra || 0
+                            );
+
+                            return (
+                              <button
+                                key={p.ProductoId}
+                                type="button"
+                                onClick={() => handleSeleccionarProducto(p)}
+                                className="w-full p-3 text-left hover:bg-emerald-50/70 transition flex items-center justify-between gap-3 cursor-pointer group"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-800 text-xs group-hover:text-emerald-700 transition-colors truncate">
+                                      {p.ProductoNombre}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                                      {p.ProductoId}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                                    Marca: <strong>{p.ProductoMarca || 'Genérica'}</strong> · Cat: {p.categoria_nombre || 'General'}
+                                    {costoRef > 0 && ` · Costo: S/ ${costoRef.toFixed(2)}`}
+                                  </p>
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                      stockNum > 0
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    }`}
+                                  >
+                                    Stock: {stockNum.toLocaleString()}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Tarjeta del producto seleccionado */
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Package className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 text-xs">
+                            {productoSeleccionado.ProductoNombre}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-600 bg-white px-1.5 py-0.5 rounded border border-emerald-100">
+                            {productoSeleccionado.ProductoId}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-0.5 truncate">
+                          Marca: <strong>{productoSeleccionado.ProductoMarca || 'Genérica'}</strong> · Cat: {productoSeleccionado.categoria_nombre || 'General'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 block leading-tight">Stock Actual</span>
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md inline-block">
+                          {productoSeleccionado.stock_actual_texto}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleLimpiarProductoSeleccionado}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg transition cursor-pointer"
+                        title="Cambiar producto"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Cantidad y Unidad de Medida (Grid de 2 columnas) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Cantidad <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="1"
+                    value={formData.cantidad}
+                    onChange={(e) => setFormData({ ...formData, cantidad: e.target.value })}
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white transition-colors font-semibold text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Unidad de Medida <span className="text-rose-500">*</span>
+                  </label>
+                  <StyledSelect
+                    size="form"
+                    value={formData.unidadesMedidaId}
+                    onChange={(v) => handleUnidadChange({ target: { value: v } })}
+                    options={[
+                      { value: '', label: '-- Seleccionar --' },
+                      ...(productoSeleccionado?.unidades || []).map((u) => ({
+                        value: u.unidades_medidaId,
+                        label: `${u.descripcion} (Factor: ${u.factor_conversion})`,
+                      })),
+                    ]}
+                    disabled={!productoSeleccionado || productoSeleccionado?.unidades?.length === 0}
+                    placeholder="-- Seleccionar --"
+                    searchable
+                    ariaLabel="Unidad de medida del movimiento"
+                    panelWidth={260}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Precios (Costo de Entrada del Lote & Precio Sugerido) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 rounded-xl border border-slate-100">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    Costo Entrada (S/)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-semibold">S/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={formData.precioUnitario}
+                      onChange={(e) => setFormData({ ...formData, precioUnitario: e.target.value })}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500 font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    Precio Sugerido Venta
+                  </label>
+                  <div className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 font-semibold flex items-center justify-between">
+                    <span>{unidadSeleccionada?.precio_venta_formateado || 'S/ 0.00'}</span>
+                    {unidadSeleccionada?.margen_porcentaje && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">
+                        {unidadSeleccionada.margen_porcentaje}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Número de Guía / Factura */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Número de Guía / Factura de Referencia
+                </label>
+                <input
+                  type="text"
+                  maxLength={45}
+                  placeholder="Ej: F001-492 o GUIA-8823"
+                  value={formData.documentoOperacionId}
+                  onChange={(e) => setFormData({ ...formData, documentoOperacionId: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-emerald-500 focus:bg-white transition-colors"
+                />
+              </div>
+
+              {/* 5. Fechas (Fecha de Ingreso & Fecha Aprox de Salida) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Fecha y Hora de Ingreso <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="datetime-local"
+                      required
+                      value={formData.fechaMovimiento}
+                      onChange={(e) => setFormData({ ...formData, fechaMovimiento: e.target.value })}
+                      className="w-full px-3 py-2 text-xs bg-emerald-50/50 border border-emerald-200 rounded-xl focus:outline-hidden focus:border-emerald-500 text-slate-800 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Fecha (Aprox) de Salida
+                  </label>
+                  <div className="relative">
+                    <StyledDatePicker
+                      value={formData.fechaAproxSalida}
+                      onChange={(v) => setFormData({ ...formData, fechaAproxSalida: v })}
+                      size="form"
+                      ariaLabel="Fecha aproximada de salida"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Acción del Modal */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleCerrarModalIngreso}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="py-2.5 px-5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Procesando Entrada...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownRight className="w-4 h-4 stroke-[2.5]" /> Registrar Entrada de Mercadería
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           MODAL: Detalle del Movimiento de Inventario (Ojito)
