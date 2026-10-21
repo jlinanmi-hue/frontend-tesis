@@ -955,9 +955,10 @@ export default function ChatBotWidget() {
       setStreamingStatus('Interpretando lista con Valencia Vision...');
 
       // 3. Procesar en backend con Gemini 1.5 Flash Vision
+      const rawBase64 = optimized.base64 || optimized.base64Data;
       const res = await api.vision.procesarPedido({
-        imagen_base64: optimized.base64Data,
-        mime_type: optimized.mimeType,
+        imagen_base64: rawBase64,
+        mime_type: optimized.mimeType || 'image/jpeg',
       });
 
       if (res && res.success && res.data) {

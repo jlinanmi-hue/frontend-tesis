@@ -61,6 +61,7 @@ export async function optimizeImageForTile(file) {
 
           resolve({
             base64: base64Data,
+            base64Data,
             mimeType,
             width,
             height,
