@@ -75,7 +75,74 @@ export default function GestionMovimientos() {
   const [filtroTipo, setFiltroTipo] = useState(''); // '' | 'E' | 'S'
   const [filtroSubtipo, setFiltroSubtipo] = useState(''); // '' | 'RECEPCION_OC' | 'ANULACION_RECEPCION' | ...
   const [filtroDias, setFiltroDias] = useState(''); // '' | '1' | '7' | '15' | '30'
+  const [fechaEspecifica, setFechaEspecifica] = useState(''); // 'YYYY-MM-DD' | ''
+  const [fechaDesde, setFechaDesde] = useState(''); // 'YYYY-MM-DD' | ''
+  const [fechaHasta, setFechaHasta] = useState(''); // 'YYYY-MM-DD' | ''
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Manejadores de Fechas y Períodos
+  const handleSeleccionarPresetDias = (dias) => {
+    setFiltroDias(dias);
+    setFechaEspecifica('');
+    setFechaDesde('');
+    setFechaHasta('');
+    setCurrentPage(1);
+  };
+
+  const handleSeleccionarFechaEspecifica = (ymd) => {
+    setFechaEspecifica(ymd || '');
+    setFiltroDias('');
+    setFechaDesde('');
+    setFechaHasta('');
+    setCurrentPage(1);
+  };
+
+  const handleSeleccionarFechaDesde = (ymd) => {
+    setFechaDesde(ymd || '');
+    setFechaEspecifica('');
+    setFiltroDias('');
+    setCurrentPage(1);
+  };
+
+  const handleSeleccionarFechaHasta = (ymd) => {
+    setFechaHasta(ymd || '');
+    setFechaEspecifica('');
+    setFiltroDias('');
+    setCurrentPage(1);
+  };
+
+  const handleLimpiarFiltrosFecha = () => {
+    setFiltroDias('');
+    setFechaEspecifica('');
+    setFechaDesde('');
+    setFechaHasta('');
+    setCurrentPage(1);
+  };
+
+  const hasCustomDate = Boolean(fechaEspecifica || fechaDesde || fechaHasta);
+  const hasDateFilter = Boolean(filtroDias || fechaEspecifica || fechaDesde || fechaHasta);
+
+  const obtenerTextoFiltroFecha = () => {
+    if (fechaEspecifica) {
+      const parts = fechaEspecifica.split('-');
+      const formatted = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : fechaEspecifica;
+      return `Día exacto: ${formatted}`;
+    }
+    if (fechaDesde && fechaHasta) {
+      const fDesde = fechaDesde.split('-').reverse().join('/');
+      const fHasta = fechaHasta.split('-').reverse().join('/');
+      return `Rango: ${fDesde} al ${fHasta}`;
+    }
+    if (fechaDesde) {
+      return `Desde el ${fechaDesde.split('-').reverse().join('/')}`;
+    }
+    if (fechaHasta) {
+      return `Hasta el ${fechaHasta.split('-').reverse().join('/')}`;
+    }
+    if (filtroDias === '1') return 'Movimientos de Hoy';
+    if (filtroDias) return `Últimos ${filtroDias} días`;
+    return null;
+  };
 
   // Formulario de Entrada Manual de Stock
   const getNowDateTimeLocal = () => {
@@ -204,11 +271,22 @@ export default function GestionMovimientos() {
       if (filtroTipo) {
         params.tipoMovimiento = filtroTipo;
       }
-      if (filtroDias) {
-        params.dias = filtroDias;
-      }
       if (filtroSubtipo) {
         params.subtipo = filtroSubtipo;
+      }
+
+      // Prioridad de filtrado por fechas:
+      // 1. Fecha específica: filtra el día exacto de 00:00 a 23:59:59
+      if (fechaEspecifica) {
+        params.fechaDesde = fechaEspecifica;
+        params.fechaHasta = fechaEspecifica;
+      } else if (fechaDesde || fechaHasta) {
+        // 2. Rango personalizado Desde / Hasta
+        if (fechaDesde) params.fechaDesde = fechaDesde;
+        if (fechaHasta) params.fechaHasta = fechaHasta;
+      } else if (filtroDias) {
+        // 3. Preset relativo (1 día, 7 días, etc.)
+        params.dias = filtroDias;
       }
 
       const res = await api.inventario.movimientos(params);
@@ -257,7 +335,7 @@ export default function GestionMovimientos() {
 
   useEffect(() => {
     cargarMovimientos(currentPage);
-  }, [currentPage, filtroTipo, filtroDias, filtroSubtipo]);
+  }, [currentPage, filtroTipo, filtroDias, filtroSubtipo, fechaEspecifica, fechaDesde, fechaHasta]);
 
   // Manejador de búsqueda con debounce (evita disparo doble en montaje inicial)
   const isFirstSearchRender = useRef(true);
@@ -573,86 +651,171 @@ export default function GestionMovimientos() {
             </div>
 
             {/* Segmented Control: Tipo de Movimiento */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="inline-flex p-1 bg-slate-100/90 rounded-xl text-xs font-semibold border border-slate-200/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltroTipo('');
-                    setCurrentPage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    filtroTipo === ''
-                      ? 'bg-white text-slate-800 shadow-xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Todos los Tipos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltroTipo('E');
-                    setFiltroSubtipo('');
-                    setCurrentPage(1);
-                  }}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    filtroTipo === 'E'
-                      ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                      : 'text-slate-600 hover:text-emerald-700'
-                  }`}
-                >
-                  <ArrowDownRight className="w-3.5 h-3.5" />
-                  <span>Entradas (E)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltroTipo('S');
-                    setFiltroSubtipo('');
-                    setCurrentPage(1);
-                  }}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    filtroTipo === 'S'
-                      ? 'bg-rose-600 text-white shadow-xs font-bold'
-                      : 'text-slate-600 hover:text-rose-700'
-                  }`}
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                  <span>Salidas (S)</span>
-                </button>
-              </div>
+            <div className="inline-flex p-1 bg-slate-100/90 rounded-xl text-xs font-semibold border border-slate-200/60 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setFiltroTipo('');
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  filtroTipo === ''
+                    ? 'bg-white text-slate-800 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todos los Tipos
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFiltroTipo('E');
+                  setFiltroSubtipo('');
+                  setCurrentPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  filtroTipo === 'E'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-emerald-700'
+                }`}
+              >
+                <ArrowDownRight className="w-3.5 h-3.5" />
+                <span>Entradas (E)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFiltroTipo('S');
+                  setFiltroSubtipo('');
+                  setCurrentPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  filtroTipo === 'S'
+                    ? 'bg-rose-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-rose-700'
+                }`}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Salidas (S)</span>
+              </button>
+            </div>
+          </div>
 
-              {/* Selector de Período Rápido */}
-              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200/80">
-                <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
+          {/* Fila 2: Control Avanzado de Fechas (Presets, Fecha Específica y Rango) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-2.5 bg-slate-50/90 rounded-xl border border-slate-200/80">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Presets Rápidos */}
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mr-0.5">
                   <Calendar className="w-3 h-3 text-slate-400" /> Período:
                 </span>
-                {[
-                  { label: 'Todos', value: '' },
-                  { label: 'Hoy', value: '1' },
-                  { label: '7d', value: '7' },
-                  { label: '15d', value: '15' },
-                  { label: '30d', value: '30' },
-                ].map((opt) => (
+                <div className="inline-flex p-0.5 bg-slate-200/60 rounded-lg text-xs font-semibold">
+                  {[
+                    { label: 'Todos', value: '' },
+                    { label: 'Hoy', value: '1' },
+                    { label: '7d', value: '7' },
+                    { label: '15d', value: '15' },
+                    { label: '30d', value: '30' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSeleccionarPresetDias(opt.value)}
+                      className={`px-2.5 py-1 text-xs rounded-md transition-all cursor-pointer ${
+                        !hasCustomDate && filtroDias === opt.value
+                          ? 'bg-white text-slate-900 shadow-xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="hidden sm:block h-5 w-px bg-slate-200" />
+
+              {/* Selector de Fecha Específica */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-blue-600" /> Fecha exacta:
+                </span>
+                <div className="w-36">
+                  <StyledDatePicker
+                    value={fechaEspecifica}
+                    onChange={handleSeleccionarFechaEspecifica}
+                    placeholder="DD/MM/AAAA"
+                    size="sm"
+                    ariaLabel="Seleccionar fecha específica de movimiento"
+                  />
+                </div>
+                {fechaEspecifica && (
                   <button
-                    key={opt.value}
                     type="button"
-                    onClick={() => {
-                      setFiltroDias(opt.value);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                      filtroDias === opt.value
-                        ? 'bg-blue-600 text-white shadow-xs font-bold'
-                        : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
-                    }`}
+                    onClick={handleLimpiarFiltrosFecha}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                    title="Quitar fecha exacta"
                   >
-                    {opt.label}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
+                )}
+              </div>
+
+              <div className="hidden sm:block h-5 w-px bg-slate-200" />
+
+              {/* Selector de Rango (Desde - Hasta) */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-slate-700">Rango:</span>
+                <div className="w-32">
+                  <StyledDatePicker
+                    value={fechaDesde}
+                    onChange={handleSeleccionarFechaDesde}
+                    placeholder="Desde"
+                    size="sm"
+                    ariaLabel="Fecha inicial"
+                  />
+                </div>
+                <span className="text-slate-400 text-xs">—</span>
+                <div className="w-32">
+                  <StyledDatePicker
+                    value={fechaHasta}
+                    onChange={handleSeleccionarFechaHasta}
+                    placeholder="Hasta"
+                    size="sm"
+                    ariaLabel="Fecha final"
+                  />
+                </div>
+                {(fechaDesde || fechaHasta) && (
+                  <button
+                    type="button"
+                    onClick={handleLimpiarFiltrosFecha}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                    title="Quitar rango de fechas"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Resumen del Filtro de Fecha Activo */}
+            {hasDateFilter && (
+              <div className="flex items-center gap-2 self-start lg:self-auto">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200/80">
+                  <Calendar className="w-3 h-3" />
+                  {obtenerTextoFiltroFecha()}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLimpiarFiltrosFecha}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 bg-white hover:bg-slate-100 px-2 py-1 rounded-md border border-slate-200 transition flex items-center gap-1 cursor-pointer"
+                  title="Restablecer fechas"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Restablecer</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Fila 2: Filtro por Subtipo de Operación (Pills Horizontales) */}
