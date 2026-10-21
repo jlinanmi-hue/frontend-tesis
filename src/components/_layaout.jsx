@@ -73,6 +73,11 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
   const [purchaseOrderInitialTab, setPurchaseOrderInitialTab] = useState('nueva');
   const [purchaseOrderSearchTerm, setPurchaseOrderSearchTerm] = useState('');
 
+  // Estado para navegación profunda a Órdenes de Clientes (desde Dashboard o alertas)
+  const [orderClientInitialTab, setOrderClientInitialTab] = useState('nueva');
+  const [orderClientSearchTerm, setOrderClientSearchTerm] = useState('');
+  const [orderClientAutoOpenId, setOrderClientAutoOpenId] = useState(null);
+
   // Navegar a Clientes o Proveedores al recibir evento de Valencia AI (para registro)
   useEffect(() => {
     const handleOpenForm = (e) => {
@@ -195,7 +200,27 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
     }
 
     // 4. Órdenes de Clientes / Pedidos
-    if (url === '/ordenes-clientes' || url === '/pedidos') {
+    if (
+      url.startsWith('/ordenes-clientes') ||
+      url.startsWith('/pedidos') ||
+      url.startsWith('#/pedidos') ||
+      url.startsWith('#/ordenes-clientes')
+    ) {
+      setOrderClientInitialTab('historial');
+      const queryPart = url.includes('?') ? url.split('?')[1] : '';
+      let searchCode = '';
+      if (queryPart) {
+        const params = new URLSearchParams(queryPart);
+        searchCode = params.get('buscar') || params.get('id') || params.get('search') || '';
+      }
+      if (!searchCode) {
+        const match = url.match(/(?:pedidos|ordenes-clientes)\/([A-Za-z0-9_-]+)/i);
+        if (match) searchCode = match[1];
+      }
+
+      setOrderClientSearchTerm(searchCode);
+      setOrderClientAutoOpenId(searchCode || null);
+
       setActiveMenu('ordenes');
       setActiveSubMenu('ordenes_clientes');
       setOpenDropdowns((prev) => ({ ...prev, ordenes: true }));
@@ -233,6 +258,24 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
       return;
     }
   };
+
+  // Escuchar cambios de hash en la URL (ej. #/pedidos?buscar=PED-20260812-019)
+  useEffect(() => {
+    const processHash = () => {
+      const hash = window.location.hash;
+      if (hash && hash.length > 1) {
+        const cleaned = hash.replace(/^#\/?/, '/');
+        handleNavigateModule(cleaned);
+        try {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch {}
+      }
+    };
+
+    processHash();
+    window.addEventListener('hashchange', processHash);
+    return () => window.removeEventListener('hashchange', processHash);
+  }, []);
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans text-slate-800 notranslate" translate="no">
@@ -973,6 +1016,13 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
             <GestionOrdenesCliente 
               aiPrefill={aiOrderPrefill}
               onClearAiPrefill={() => setAiOrderPrefill(null)}
+              initialTab={orderClientInitialTab}
+              initialSearch={orderClientSearchTerm}
+              autoOpenPedidoId={orderClientAutoOpenId}
+              onClearInitialSearch={() => {
+                setOrderClientSearchTerm('');
+                setOrderClientAutoOpenId(null);
+              }}
             />
           ) : activeMenu === 'ordenes' && (activeSubMenu === 'ordenes_compra' || !activeSubMenu) ? (
             <GestionOrdenesCompra 
@@ -1024,7 +1074,7 @@ export default function Layout({ user, onLogout, onUpdateUserData, children }) {
           ) : activeMenu === 'notificaciones' ? (
             <GestionNotificaciones onNavigateModule={handleNavigateModule} />
           ) : activeMenu === 'indicadores' ? (
-            <Dashboard />
+            <Dashboard onNavigate={handleNavigateModule} />
           ) : (
             <div className="bg-white rounded-2xl border border-slate-200 p-14 text-center shadow-xs">
               <Boxes className="w-14 h-14 text-slate-300 mx-auto mb-3.5" />

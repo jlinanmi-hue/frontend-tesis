@@ -30,7 +30,7 @@ const IND_TTL_MS = 120_000;
 const ejecCache = new Map();
 let indCache = { ts: 0, data: null };
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigate = null }) {
   const [dias, setDias] = useState(7);
   const [canal, setCanal] = useState('');
   const [zona, setZona] = useState('');
@@ -393,7 +393,11 @@ export default function Dashboard() {
               <PedidosPorAtenderList
                 pedidosData={ejecutivoData?.pedidos_por_atender}
                 onOpenPedido={(id) => {
-                  window.location.hash = `#/pedidos?buscar=${id}`;
+                  if (typeof onNavigate === 'function') {
+                    onNavigate(`/pedidos?buscar=${id}`);
+                  } else {
+                    window.location.hash = `#/pedidos?buscar=${id}`;
+                  }
                 }}
               />
             </LazyBlock>

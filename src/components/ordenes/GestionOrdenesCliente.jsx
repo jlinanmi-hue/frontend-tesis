@@ -342,7 +342,14 @@ function BuscadorDireccionMapbox({ onSelectUbicacion, placeholder = 'Buscar dire
   );
 }
 
-export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefill = null }) {
+export default function GestionOrdenesCliente({
+  aiPrefill = null,
+  onClearAiPrefill = null,
+  initialTab = null,
+  initialSearch = null,
+  autoOpenPedidoId = null,
+  onClearInitialSearch = null,
+}) {
   // Pestaña activa: 'nueva' (Registrar Pedido) | 'historial' (Historial y Monitoreo)
   const [activeTab, setActiveTab] = useState('nueva');
 
@@ -1083,6 +1090,31 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     };
   }, []);
 
+  // Efectos para sincronizar navegación externa (desde Dashboard o Notificaciones)
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (initialSearch !== null && initialSearch !== undefined && initialSearch !== '') {
+      setActiveTab('historial');
+      setSearchHistorial(initialSearch);
+      cargarHistorial(1, { search: initialSearch });
+      cargarEstadisticas({ search: initialSearch });
+    }
+  }, [initialSearch]);
+
+  useEffect(() => {
+    if (autoOpenPedidoId) {
+      verDetalleOrden(autoOpenPedidoId);
+      if (typeof onClearInitialSearch === 'function') {
+        onClearInitialSearch();
+      }
+    }
+  }, [autoOpenPedidoId]);
+
   // Cargar Historial y Estadísticas cuando se entra a la pestaña 'historial'
   useEffect(() => {
     if (activeTab === 'historial') {
@@ -1093,8 +1125,9 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
 
   const cargarEstadisticas = async (customParams = null) => {
     try {
+      const currentSearch = (customParams?.search !== undefined ? customParams.search : searchHistorial).trim() || undefined;
       const params = customParams || {
-        search: searchHistorial.trim() || undefined,
+        search: currentSearch,
         estado: filtroEstado || undefined,
         canal_id: filtroCanal || undefined,
         origen_ia: filtroOrigen || undefined,
@@ -1110,14 +1143,15 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
     }
   };
 
-  const cargarHistorial = async (page = 1) => {
+  const cargarHistorial = async (page = 1, customParams = null) => {
     setIsLoadingHistorial(true);
     try {
+      const currentSearch = (customParams?.search !== undefined ? customParams.search : searchHistorial).trim() || undefined;
       const params = {
         page,
         per_page: paginacion.per_page,
-        search: searchHistorial.trim() || undefined,
-        estado: filtroEstado || undefined,
+        search: currentSearch,
+        estado: (customParams?.estado !== undefined ? customParams.estado : filtroEstado) || undefined,
         canal_id: filtroCanal || undefined,
         origen_ia: filtroOrigen || undefined,
         fecha_desde: fechaDesde || undefined,
@@ -3838,8 +3872,22 @@ export default function GestionOrdenesCliente({ aiPrefill = null, onClearAiPrefi
                     }
                   }}
                   placeholder="Buscar por ID (PED-...) o nombre de cliente..."
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+                {searchHistorial && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchHistorial('');
+                      cargarHistorial(1, { search: '' });
+                      cargarEstadisticas({ search: '' });
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                    title="Limpiar búsqueda"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Filtro Estado */}

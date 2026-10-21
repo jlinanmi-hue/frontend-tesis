@@ -61,8 +61,21 @@ export default function PedidosPorAtenderList({ pedidosData, onOpenPedido }) {
                     className="hover:bg-slate-50/70 transition-colors group"
                   >
                     {/* Código Pedido */}
-                    <td className="py-3 pl-1 pr-2 font-mono font-bold text-blue-600 whitespace-nowrap align-middle">
-                      {p.pedido_id}
+                    <td className="py-3 pl-1 pr-2 whitespace-nowrap align-middle">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof onOpenPedido === 'function') {
+                            onOpenPedido(p.pedido_id);
+                          } else {
+                            window.location.hash = `#/pedidos?buscar=${p.pedido_id}`;
+                          }
+                        }}
+                        className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                        title={`Atender orden ${p.pedido_id}`}
+                      >
+                        {p.pedido_id}
+                      </button>
                     </td>
 
                     {/* Cliente & Teléfono */}
@@ -149,9 +162,27 @@ export default function PedidosPorAtenderList({ pedidosData, onOpenPedido }) {
       <div className="pt-3 border-t border-slate-100 flex items-start gap-2 text-xs text-slate-600">
         <span className={`w-2 h-2 rounded-full ${hayUrgentes ? 'bg-rose-500' : 'bg-emerald-500'} shrink-0 mt-1`} />
         <span className="font-medium leading-relaxed break-words min-w-0">
-          {ordenMasCritica
-            ? `Hay órdenes pendientes con tiempo activo. La orden ${ordenMasCritica.pedido_id} tiene ${ordenMasCritica.horas_espera}h de espera y requiere confirmación.`
-            : 'Todos los pedidos pendientes se encuentran dentro del rango de tiempo normal.'}
+          {ordenMasCritica ? (
+            <>
+              Hay órdenes pendientes con tiempo activo. La orden{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof onOpenPedido === 'function') {
+                    onOpenPedido(ordenMasCritica.pedido_id);
+                  } else {
+                    window.location.hash = `#/pedidos?buscar=${ordenMasCritica.pedido_id}`;
+                  }
+                }}
+                className="font-mono font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+              >
+                {ordenMasCritica.pedido_id}
+              </button>{' '}
+              tiene {ordenMasCritica.horas_espera}h de espera y requiere confirmación.
+            </>
+          ) : (
+            'Todos los pedidos pendientes se encuentran dentro del rango de tiempo normal.'
+          )}
         </span>
       </div>
     </div>
