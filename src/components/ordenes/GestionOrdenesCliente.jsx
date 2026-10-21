@@ -2969,12 +2969,12 @@ export default function GestionOrdenesCliente({
                       setAcuerdoComercial(v);
                     }}
                     options={[
-                      { value: 'Cotización', label: 'Cotización (No descuenta stock)' },
-                      { value: 'Pedido', label: 'Pedido (Descuenta stock)' },
+                      { value: 'Cotización', label: 'Cotización' },
+                      { value: 'Pedido', label: 'Pedido' },
                     ]}
                     icon={acuerdoComercial === 'Cotización' ? <FileText className="w-4 h-4 text-amber-500" /> : <FileCheck2 className="w-4 h-4 text-blue-500" />}
                     placeholder="Seleccionar tipo..."
-                    panelWidth={280}
+                    panelWidth={200}
                     size="form"
                     ariaLabel="Tipo de Registro"
                   />
@@ -3897,9 +3897,9 @@ export default function GestionOrdenesCliente({
                   onChange={(v) => setFiltroEstado(v)}
                   options={[
                     { value: '', label: 'Todos los Estados' },
-                    { value: 'P', label: 'Pendientes (P)' },
-                    { value: 'C', label: 'Completadas (C)' },
-                    { value: 'A', label: 'Canceladas (A)' }
+                    { value: 'P', label: 'Pendientes' },
+                    { value: 'C', label: 'Completadas' },
+                    { value: 'A', label: 'Canceladas' }
                   ]}
                   icon={<CheckCircle2 className="w-4 h-4 text-slate-400" />}
                   placeholder="Todos los Estados"
@@ -4653,11 +4653,11 @@ export default function GestionOrdenesCliente({
                       <div className="flex items-center gap-2 mb-1">
                         {esCotizacionOrden(ordenDetalle) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                            <FileText className="w-3.5 h-3.5" /> Cotización (Stock intacto)
+                            <FileText className="w-3.5 h-3.5" /> Cotización
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                            <FileCheck2 className="w-3.5 h-3.5" /> Pedido (Stock descontado)
+                            <FileCheck2 className="w-3.5 h-3.5" /> Pedido
                           </span>
                         )}
                       </div>
@@ -5168,7 +5168,7 @@ export default function GestionOrdenesCliente({
                     ? 'bg-amber-100 text-amber-800 border border-amber-300'
                     : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                 }`}>
-                  {despachoEditAcuerdo === 'Cotización' ? '📄 Stock intacto (Sin descuento)' : '⚡ Descuenta stock de almacén'}
+                  {despachoEditAcuerdo === 'Cotización' ? '📄 Stock intacto' : '⚡ Descuenta stock'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
