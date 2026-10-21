@@ -158,13 +158,21 @@ export default function ModalHistorialRecepcion({ isOpen, onClose, ordenId }) {
                               )}
                             </td>
                             <td className="py-2.5 px-2 text-center">
-                              <div className="font-bold text-amber-600">{pendiente}</div>
+                              <div className={`font-bold ${it.estado_recepcion === 'RECHAZADO' || it.rechazado ? 'text-rose-600 line-through' : 'text-amber-600'}`}>
+                                {it.estado_recepcion === 'RECHAZADO' || it.rechazado ? 0 : pendiente}
+                              </div>
                               {factor > 1 && (
-                                <div className="text-[10px] text-amber-600/70">({pendiente * factor} unid.)</div>
+                                <div className={`text-[10px] ${it.estado_recepcion === 'RECHAZADO' || it.rechazado ? 'text-rose-500/70' : 'text-amber-600/70'}`}>
+                                  ({(it.estado_recepcion === 'RECHAZADO' || it.rechazado ? 0 : pendiente) * factor} unid.)
+                                </div>
                               )}
                             </td>
                             <td className="py-2.5 px-2 text-center">
-                              {it.estado_recepcion === 'COMPLETO' ? (
+                              {it.estado_recepcion === 'RECHAZADO' || it.rechazado ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                  Rechazado
+                                </span>
+                              ) : it.estado_recepcion === 'COMPLETO' ? (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                   Completo
                                 </span>

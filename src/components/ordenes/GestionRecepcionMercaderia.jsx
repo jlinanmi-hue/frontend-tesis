@@ -182,6 +182,13 @@ export default function GestionRecepcionMercaderia() {
             Cerrada con Faltante
           </span>
         );
+      case 'RECHAZADA':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle className="w-3.5 h-3.5 text-rose-500" />
+            Rechazada
+          </span>
+        );
       case 'ANULADA':
       case 'A':
       case 'CANCELADA_PROVEEDOR':
@@ -322,6 +329,7 @@ export default function GestionRecepcionMercaderia() {
               { value: 'RECEPCION_PARCIAL', label: 'En Recepción Parcial' },
               { value: 'CERRADA_CONFORME', label: 'Cerrada Conforme' },
               { value: 'CERRADA_CON_FALTANTE', label: 'Cerrada con Faltante' },
+              { value: 'RECHAZADA', label: 'Rechazada' },
               { value: 'ANULADA', label: 'Anulada' },
             ]}
             panelWidth={230}

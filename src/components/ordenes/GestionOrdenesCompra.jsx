@@ -896,6 +896,13 @@ export default function GestionOrdenesCompra({
             Cerrada con Faltante
           </span>
         );
+      case 'RECHAZADA':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+            <XCircle className="w-3.5 h-3.5 text-rose-500" />
+            Rechazada
+          </span>
+        );
       case 'ANULADA':
       case 'A':
       case 'CANCELADA_PROVEEDOR':
