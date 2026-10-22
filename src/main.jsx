@@ -2,7 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { setupMapboxGlobal } from './utils/mapboxConfig';
 import App from './App.jsx';
+
+// Inicializar token de Mapbox globalmente
+setupMapboxGlobal();
 
 // Protección contra mutaciones de DOM por extensiones (Google Translate, etc.)
 // Evita el error 'Failed to execute removeChild on Node' que causa pantallas blancas en React

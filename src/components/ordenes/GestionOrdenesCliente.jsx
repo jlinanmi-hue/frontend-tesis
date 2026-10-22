@@ -57,7 +57,7 @@ import ModalEscanearLista from './ModalEscanearLista';
 import StyledSelect from '../dashboard/filters/StyledSelect';
 import StyledDatePicker from '../common/StyledDatePicker';
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+import { MAPBOX_TOKEN } from '../../utils/mapboxConfig';
 const TRUJILLO_CENTER = [-79.0287, -8.1116];
 
 // Delimitación geográfica estricta: Solo provincia de Trujillo
@@ -1674,21 +1674,27 @@ export default function GestionOrdenesCliente({
   useEffect(() => {
     if (!esDelivery || !deliveryMapContainerRef.current) return;
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    try {
+      if (!MAPBOX_TOKEN) {
+        console.warn('Mapbox Token no disponible para delivery de órdenes');
+        return;
+      }
 
-    const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
-    const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
-    const initialLngLat = customerCoords || [storeLng, storeLat];
+      mapboxgl.accessToken = MAPBOX_TOKEN;
 
-    const map = new mapboxgl.Map({
-      container: deliveryMapContainerRef.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: initialLngLat,
-      zoom: 12.8,
-      minZoom: 10,
-      maxZoom: 18,
-      maxBounds: TRUJILLO_BOUNDS,
-    });
+      const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
+      const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
+      const initialLngLat = customerCoords || [storeLng, storeLat];
+
+      const map = new mapboxgl.Map({
+        container: deliveryMapContainerRef.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: initialLngLat,
+        zoom: 12.8,
+        minZoom: 10,
+        maxZoom: 18,
+        maxBounds: TRUJILLO_BOUNDS,
+      });
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
 
@@ -1846,7 +1852,10 @@ export default function GestionOrdenesCliente({
       }
     });
 
-    deliveryMapRef.current = map;
+      deliveryMapRef.current = map;
+    } catch (err) {
+      console.error('Error inicializando mapa de delivery:', err);
+    }
 
     return () => {
       if (deliveryMapRef.current) {
@@ -1875,21 +1884,27 @@ export default function GestionOrdenesCliente({
         editDespachoMapRef.current = null;
       }
 
-      mapboxgl.accessToken = MAPBOX_TOKEN;
+      try {
+        if (!MAPBOX_TOKEN) {
+          console.warn('Mapbox Token no disponible para modal de modificar despacho');
+          return;
+        }
 
-      const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
-      const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
-      const initialLngLat = despachoEditCoords || [storeLng, storeLat];
+        mapboxgl.accessToken = MAPBOX_TOKEN;
 
-      const map = new mapboxgl.Map({
-        container: editDespachoMapContainerRef.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
-        center: initialLngLat,
-        zoom: 12.8,
-        minZoom: 10,
-        maxZoom: 18,
-        maxBounds: TRUJILLO_BOUNDS,
-      });
+        const storeLng = Number(datosEmpresa?.EmpresaLongitud) || TRUJILLO_CENTER[0];
+        const storeLat = Number(datosEmpresa?.EmpresaLatitud) || TRUJILLO_CENTER[1];
+        const initialLngLat = despachoEditCoords || [storeLng, storeLat];
+
+        const map = new mapboxgl.Map({
+          container: editDespachoMapContainerRef.current,
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: initialLngLat,
+          zoom: 12.8,
+          minZoom: 10,
+          maxZoom: 18,
+          maxBounds: TRUJILLO_BOUNDS,
+        });
 
       map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
 
@@ -2057,7 +2072,10 @@ export default function GestionOrdenesCliente({
         }
       });
 
-      editDespachoMapRef.current = map;
+        editDespachoMapRef.current = map;
+      } catch (err) {
+        console.error('Error inicializando mapa en modal modificar despacho:', err);
+      }
     }, 150);
 
     return () => {

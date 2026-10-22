@@ -19,8 +19,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { api } from '../../services/api';
 import StyledSelect from '../dashboard/filters/StyledSelect';
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+import { MAPBOX_TOKEN } from '../../utils/mapboxConfig';
 
 // Centro por defecto: Trujillo, Perú
 const TRUJILLO_CENTER = [-79.0287, -8.1116];
@@ -159,24 +158,33 @@ export default function GestionZonasDelivery() {
     const timer = setTimeout(() => {
       if (!mapContainerRef.current) return;
 
-      mapboxgl.accessToken = MAPBOX_TOKEN;
+      try {
+        if (!MAPBOX_TOKEN) {
+          console.warn('Mapbox Token no disponible para delimitación de zonas');
+          return;
+        }
 
-      const map = new mapboxgl.Map({
-        container: mapContainerRef.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
-        center: TRUJILLO_CENTER,
-        zoom: 12,
-        minZoom: 10,
-        maxZoom: 18,
-        maxBounds: TRUJILLO_BOUNDS
-      });
+        mapboxgl.accessToken = MAPBOX_TOKEN;
 
-      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+        const map = new mapboxgl.Map({
+          container: mapContainerRef.current,
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: TRUJILLO_CENTER,
+          zoom: 12,
+          minZoom: 10,
+          maxZoom: 18,
+          maxBounds: TRUJILLO_BOUNDS
+        });
 
-      map.on('load', () => {
-        mapRef.current = map;
-        renderPolygonOnMap(map, formData.poligonoGeoJSON);
-      });
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        map.on('load', () => {
+          mapRef.current = map;
+          renderPolygonOnMap(map, formData.poligonoGeoJSON);
+        });
+      } catch (err) {
+        console.error('Error inicializando mapa de zonas delivery:', err);
+      }
     }, 150);
 
     return () => {

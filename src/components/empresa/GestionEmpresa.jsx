@@ -22,8 +22,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { sileo } from 'sileo';
 import api from '../../services/api';
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+import { MAPBOX_TOKEN } from '../../utils/mapboxConfig';
 
 // Delimitación geográfica estricta: Solo provincia de Trujillo
 const TRUJILLO_BOUNDS = [
@@ -58,6 +57,7 @@ export default function GestionEmpresa() {
   const [isConsultingSunat, setIsConsultingSunat] = useState(false);
   const [sunatStatus, setSunatStatus] = useState(null); // { estado, condicion }
   const [ultimaModificacion, setUltimaModificacion] = useState(null);
+  const [mapError, setMapError] = useState(null);
 
   // Cargar datos actuales de la empresa
   const cargarEmpresa = async () => {
@@ -110,58 +110,69 @@ export default function GestionEmpresa() {
     if (isLoading || !mapContainerRef.current) return;
     if (mapRef.current) return;
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    if (!MAPBOX_TOKEN) {
+      setMapError('Token de Mapbox no configurado. El mapa interactivo se encuentra deshabilitado.');
+      return;
+    }
 
-    const lat = Number(formData.EmpresaLatitud) || -8.1116;
-    const lng = Number(formData.EmpresaLongitud) || -79.0287;
+    try {
+      setMapError(null);
+      mapboxgl.accessToken = MAPBOX_TOKEN;
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [lng, lat],
-      zoom: 13,
-      minZoom: 10,
-      maxZoom: 18,
-      maxBounds: TRUJILLO_BOUNDS
-    });
+      const lat = Number(formData.EmpresaLatitud) || -8.1116;
+      const lng = Number(formData.EmpresaLongitud) || -79.0287;
 
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      const map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [lng, lat],
+        zoom: 13,
+        minZoom: 10,
+        maxZoom: 18,
+        maxBounds: TRUJILLO_BOUNDS
+      });
 
-    const marker = new mapboxgl.Marker({
-      draggable: true,
-      color: '#2563eb'
-    })
-      .setLngLat([lng, lat])
-      .addTo(map);
+      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
-    const updateCoords = (newLng, newLat) => {
-      // Validar si está dentro de Trujillo
-      const dentroDeTrujillo = newLng >= -79.25 && newLng <= -78.70 && newLat >= -8.28 && newLat <= -7.90;
-      if (!dentroDeTrujillo) {
-        sileo.warning('La sede de Comercial Valencia debe ubicarse dentro de la provincia de Trujillo.');
-        marker.setLngLat([lng, lat]);
-        return;
-      }
+      const marker = new mapboxgl.Marker({
+        draggable: true,
+        color: '#2563eb'
+      })
+        .setLngLat([lng, lat])
+        .addTo(map);
 
-      setFormData(prev => ({
-        ...prev,
-        EmpresaLongitud: Number(newLng.toFixed(6)),
-        EmpresaLatitud: Number(newLat.toFixed(6))
-      }));
-    };
+      const updateCoords = (newLng, newLat) => {
+        // Validar si está dentro de Trujillo
+        const dentroDeTrujillo = newLng >= -79.25 && newLng <= -78.70 && newLat >= -8.28 && newLat <= -7.90;
+        if (!dentroDeTrujillo) {
+          sileo.warning('La sede de Comercial Valencia debe ubicarse dentro de la provincia de Trujillo.');
+          marker.setLngLat([lng, lat]);
+          return;
+        }
 
-    marker.on('dragend', () => {
-      const lngLat = marker.getLngLat();
-      updateCoords(lngLat.lng, lngLat.lat);
-    });
+        setFormData(prev => ({
+          ...prev,
+          EmpresaLongitud: Number(newLng.toFixed(6)),
+          EmpresaLatitud: Number(newLat.toFixed(6))
+        }));
+      };
 
-    map.on('click', (e) => {
-      marker.setLngLat(e.lngLat);
-      updateCoords(e.lngLat.lng, e.lngLat.lat);
-    });
+      marker.on('dragend', () => {
+        const lngLat = marker.getLngLat();
+        updateCoords(lngLat.lng, lngLat.lat);
+      });
 
-    mapRef.current = map;
-    markerRef.current = marker;
+      map.on('click', (e) => {
+        marker.setLngLat(e.lngLat);
+        updateCoords(e.lngLat.lng, e.lngLat.lat);
+      });
+
+      mapRef.current = map;
+      markerRef.current = marker;
+    } catch (err) {
+      console.error('Error inicializando Mapbox en Gestión de Empresa:', err);
+      setMapError('No se pudo cargar el mapa interactivo de Mapbox. Puedes ajustar las coordenadas manualmente.');
+    }
 
     return () => {
       if (mapRef.current) {
@@ -554,8 +565,16 @@ export default function GestionEmpresa() {
 
             <div
               ref={mapContainerRef}
-              className="w-full h-72 rounded-xl border border-slate-200 overflow-hidden shadow-inner bg-slate-100"
-            />
+              className="w-full h-72 rounded-xl border border-slate-200 overflow-hidden shadow-inner bg-slate-100 relative"
+            >
+              {mapError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-slate-50/95 text-slate-700 z-10">
+                  <AlertCircle className="w-8 h-8 text-amber-500 mb-2" />
+                  <p className="text-xs font-semibold">{mapError}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Puedes ingresar o ajustar las coordenadas manualmente a continuación.</p>
+                </div>
+              )}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
