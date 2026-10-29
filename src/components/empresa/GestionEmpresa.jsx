@@ -132,6 +132,10 @@ export default function GestionEmpresa() {
         maxBounds: TRUJILLO_BOUNDS
       });
 
+      map.on('error', (e) => {
+        console.warn('Mapbox error event in GestionEmpresa:', e);
+      });
+
       map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
       const marker = new mapboxgl.Marker({
