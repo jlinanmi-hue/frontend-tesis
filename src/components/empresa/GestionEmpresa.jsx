@@ -124,6 +124,7 @@ export default function GestionEmpresa() {
 
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
+        accessToken: MAPBOX_TOKEN,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [lng, lat],
         zoom: 13,

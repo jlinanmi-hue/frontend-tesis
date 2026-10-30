@@ -168,6 +168,7 @@ export default function GestionZonasDelivery() {
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
+          accessToken: MAPBOX_TOKEN,
           style: 'mapbox://styles/mapbox/streets-v12',
           center: TRUJILLO_CENTER,
           zoom: 12,
