@@ -8,13 +8,7 @@ const _RAW_FALLBACK = 'cGsuZXlKMUlqb2lZV1J0YVc0eU1qQTBJaXdpWVNJNkltTnRkWGczYTNJM
 
 const getFallbackToken = () => {
   try {
-    if (typeof atob === 'function') {
-      return atob(_RAW_FALLBACK);
-    }
-    if (typeof Buffer !== 'undefined') {
-      return Buffer.from(_RAW_FALLBACK, 'base64').toString('utf-8');
-    }
-    return '';
+    return typeof atob === 'function' ? atob(_RAW_FALLBACK) : '';
   } catch {
     return '';
   }

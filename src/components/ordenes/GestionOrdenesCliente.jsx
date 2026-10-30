@@ -1688,7 +1688,6 @@ export default function GestionOrdenesCliente({
 
       const map = new mapboxgl.Map({
         container: deliveryMapContainerRef.current,
-        accessToken: MAPBOX_TOKEN,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: initialLngLat,
         zoom: 12.8,
@@ -1899,7 +1898,6 @@ export default function GestionOrdenesCliente({
 
         const map = new mapboxgl.Map({
           container: editDespachoMapContainerRef.current,
-          accessToken: MAPBOX_TOKEN,
           style: 'mapbox://styles/mapbox/streets-v12',
           center: initialLngLat,
           zoom: 12.8,
